@@ -63,6 +63,7 @@ func GetSlashURL(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(`there is no url`))
 		return
 	}
+
 	log.Printf("the short url is %s \n", shortURL)
 
 	originURL, ok := service.ReverseMap(shortURL)
