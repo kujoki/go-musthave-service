@@ -13,7 +13,9 @@ func validateHeaders(r *http.Request) bool {
 	return strings.HasPrefix(contentType, "text/plain")
 }
 
-func SlashURL(w http.ResponseWriter, req *http.Request) {
+func WrapperPostSlash(baseURL string) http.HandlerFunc {
+	log.Printf("base url is %s \n", baseURL)
+	return func(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 
 	validHeaders := validateHeaders(req)
@@ -44,12 +46,14 @@ func SlashURL(w http.ResponseWriter, req *http.Request) {
 
 	shortURL := service.CreateShortURL(originURL)
 	log.Printf("a request was received for URL %s: %s \n", originURL, shortURL)
-	fullURL := "http://localhost:8080/" + shortURL
+	fullURL := baseURL + "/" + shortURL
 
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(fullURL))
 	log.Println("processing POST request was completed")
+	}
 }
+
 
 func GetSlashURL(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")

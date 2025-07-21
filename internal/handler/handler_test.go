@@ -47,7 +47,8 @@ func TestPostHandler(t *testing.T) {
 			request.Header.Set("Content-Type", "text/plain")
 
 			w := httptest.NewRecorder()
-            handler.SlashURL(w, request)
+			postSlashHandler := handler.WrapperPostSlash("http://localhost:8000")
+            postSlashHandler(w, request)
 
             res := w.Result()
 			defer res.Body.Close()

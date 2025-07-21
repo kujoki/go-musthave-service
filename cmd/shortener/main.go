@@ -5,13 +5,24 @@ import (
 	"log"
 	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/handler"
+	"github.com/kujoki/go-musthave-service/internal/config"
 )
 
 func main() {
+	config.ParseFlags()
+
+	if err := run(); err != nil {
+        panic(err)
+    }
+}
+
+func run() error {
 	r := chi.NewRouter()
 
+	log.Println("Running server on", config.RunAddr)
+
 	r.Route("/", func(r chi.Router) {
-		r.Post("/", handler.SlashURL) 
+		r.Post("/", handler.WrapperPostSlash(config.BaseURL)) 
 		r.Get("/{id}", handler.GetSlashURL)
 	})
 
@@ -20,5 +31,5 @@ func main() {
 		w.Write([]byte(`this request are not allowed!`))
 	})
 
-	log.Fatal(http.ListenAndServe(":8080", r))
+	return http.ListenAndServe(config.RunAddr, r)
 }
