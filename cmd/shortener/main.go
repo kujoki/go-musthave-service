@@ -6,30 +6,32 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/handler"
 	"github.com/kujoki/go-musthave-service/internal/config"
+	"github.com/kujoki/go-musthave-service/internal/service"
 )
 
 func main() {
-	config.ParseFlags()
-
-	if err := run(); err != nil {
-        panic(err)
+	cfg := config.ParseFlags()
+    
+    if err := run(cfg); err != nil {
+        log.Fatalf("Server failed to start: %v", err)
     }
 }
 
-func run() error {
+
+func run(cfg *config.Config) error {
+	s := service.NewService()
+
 	r := chi.NewRouter()
 
-	log.Println("Running server on", config.RunAddr)
+	log.Println("Running server on", cfg.RunAddr)
 
-	r.Route("/", func(r chi.Router) {
-		r.Post("/", handler.WrapperPostSlash(config.BaseURL)) 
-		r.Get("/{id}", handler.GetSlashURL)
-	})
+	r.Post("/", handler.WrapperPostSlash(cfg.BaseURL, s))
+	r.Get("/{ID}", handler.WrapperGetSlashURL(s))
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`this request are not allowed!`))
 	})
 
-	return http.ListenAndServe(config.RunAddr, r)
+	return http.ListenAndServe(cfg.RunAddr, r)
 }

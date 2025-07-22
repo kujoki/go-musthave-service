@@ -3,6 +3,7 @@ package handler_test
 import (
 	"testing"
 	"github.com/stretchr/testify/assert"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"github.com/kujoki/go-musthave-service/internal/handler"
@@ -39,6 +40,7 @@ func TestPostHandler(t *testing.T) {
 			},
 		},
 	}
+	s := service.NewService()
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body := strings.NewReader(test.url)
@@ -47,7 +49,7 @@ func TestPostHandler(t *testing.T) {
 			request.Header.Set("Content-Type", "text/plain")
 
 			w := httptest.NewRecorder()
-			postSlashHandler := handler.WrapperPostSlash("http://localhost:8000")
+			postSlashHandler := handler.WrapperPostSlash("http://localhost:8080", s)
             postSlashHandler(w, request)
 
             res := w.Result()
@@ -69,10 +71,6 @@ func TestPostHandler(t *testing.T) {
 }
 
 func TestGetHandler(t *testing.T) {
-	// service.OriginShortURLMap["https://practicum.yandex.ru/"] = []byte("OfsO5")
-
-	service.OriginShortURLMap["OfsO5"] = "https://practicum.yandex.ru/"
-
 	type want struct {
 		code int
 		contentType string
@@ -102,13 +100,21 @@ func TestGetHandler(t *testing.T) {
 			},
 		},
 	}
+	s := service.NewService()
+	s.URLMap["OfsO5"] = "https://practicum.yandex.ru/"
+
+	r := chi.NewRouter()
+	r.Get("/{ID}", handler.WrapperGetSlashURL(s))
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, "/" + test.url, nil)
 			request.Header.Set("Content-Type", "text/plain")
 
 			w := httptest.NewRecorder()
-            handler.GetSlashURL(w, request)
+			r.ServeHTTP(w, request)
+            getSlashHandler := handler.WrapperGetSlashURL(s)
+			getSlashHandler(w, request)
 
             res := w.Result()
 			defer res.Body.Close()
