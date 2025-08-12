@@ -34,9 +34,11 @@ func run(cfg *config.Config) error {
 	r := chi.NewRouter()
 
 	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s)
+	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s)
 	getHandler := handler.WrapperGetSlashURL(s)
 
 	r.Post("/",  l.WithLogging(sugar, postHandler))
+	r.Post("/api/shorten", l.WithLogging(sugar, postAPIShortHandler))
 	r.Get("/{ID}", l.WithLogging(sugar, getHandler))
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
