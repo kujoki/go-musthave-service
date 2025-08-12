@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/middleware"
 	"go.uber.org/zap"
 	"github.com/kujoki/go-musthave-service/internal/handler"
 	"github.com/kujoki/go-musthave-service/internal/config"
@@ -32,6 +33,10 @@ func run(cfg *config.Config) error {
 	s := service.NewService()
 
 	r := chi.NewRouter()
+
+	
+	r.Use(handler.GzipMiddleware)
+	r.Use(middleware.Compress(5, "application/json", "text/html"))
 
 	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s)
 	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s)
