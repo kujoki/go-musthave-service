@@ -4,15 +4,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-    "syscall"
-	"github.com/go-chi/chi/v5"
+	"syscall"
+
 	"github.com/go-chi/chi/middleware"
-	"go.uber.org/zap"
-	"github.com/kujoki/go-musthave-service/internal/handler"
+	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/config"
 	"github.com/kujoki/go-musthave-service/internal/db"
-	"github.com/kujoki/go-musthave-service/internal/service"
+	"github.com/kujoki/go-musthave-service/internal/handler"
 	l "github.com/kujoki/go-musthave-service/internal/logger"
+	"github.com/kujoki/go-musthave-service/internal/model"
+	"github.com/kujoki/go-musthave-service/internal/service"
+	"go.uber.org/zap"
 )
 
 var sugar zap.SugaredLogger
@@ -36,7 +38,8 @@ func run(cfg *config.Config) error {
 
 	data, err := cache.Load(cfg.FileStoragePath)
 	if err != nil {
-		sugar.Fatalw(err.Error(), "event", "read URL map")
+		sugar.Infow(err.Error(), "event", "read URL map")
+		data = []model.Data{}
 	}
 	sugar.Infow("Read storage", "filename", cfg.FileStoragePath)
 
