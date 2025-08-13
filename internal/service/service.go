@@ -4,18 +4,40 @@ import (
 	"log"
 	"math/rand"
 	"sync"
+	"strconv"
+	"github.com/kujoki/go-musthave-service/internal/model"
 )
 
 const symbols = "zxcvbnmasdfghjklqwertyuiopZXCVBNMASDFGHJKLQWERTYUIOP1234567890"
 
 type Service struct {
 	URLMap map[string]string
+	lenURL int
 	mu sync.RWMutex
 }
 
-func NewService() *Service {
+func MaxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func CreateURLMap(data []model.Data) (map[string]string, int) {
+	URLMap := make(map[string]string)
+	lenURL := 5
+	for _, item := range data {
+        URLMap[item.ShortURL] = item.OriginalURL
+		lenURL = len(item.ShortURL)
+    }
+    return URLMap, lenURL
+}
+
+func NewService(data []model.Data) *Service {
+	URLMap, lenURL := CreateURLMap(data)
 	return &Service{
-		URLMap: make(map[string]string),
+		URLMap: URLMap,
+		lenURL: lenURL,
 	}
 }
 
@@ -38,10 +60,9 @@ func generateRandomString(length int) string {
 func (s *Service) CreateShortURL(originURL string) string {
 	s.mu.Lock() 
 	defer s.mu.Unlock()
-	const lenURL = 5
 
 	log.Println("check if url was generated")
-
+	log.Println("URLMap", s.URLMap)
 	for short, origin := range s.URLMap {
 		if origin == originURL {
 			log.Println("url for this value was already generated")
@@ -52,11 +73,28 @@ func (s *Service) CreateShortURL(originURL string) string {
 	var shortURL string
 
 	for {
-		shortURL = generateRandomString(lenURL)
+		shortURL = generateRandomString(s.lenURL)
 		if _, exists := s.URLMap[shortURL]; !exists {
 			s.URLMap[shortURL] = originURL
 			log.Printf("url %s has been saved to map \n", shortURL)
 			return shortURL
 		}
 	}
+}
+
+func (s *Service) AllData() []model.Data {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    data := make([]model.Data, 0, len(s.URLMap))
+	i := 1 
+    for short, orig := range s.URLMap {
+        data = append(data, model.Data{
+            UUID:        strconv.Itoa(i),
+            ShortURL:    short,
+            OriginalURL: orig,
+        })
+		i++
+    }
+    return data
 }

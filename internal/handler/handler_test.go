@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"github.com/kujoki/go-musthave-service/internal/handler"
 	"github.com/kujoki/go-musthave-service/internal/service"
+	"github.com/kujoki/go-musthave-service/internal/model"
 	"encoding/json"
 	"io"
 	"log"
@@ -43,7 +44,7 @@ func TestPostHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService()
+	s := service.NewService([]model.Data{})
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body := strings.NewReader(test.url)
@@ -103,7 +104,7 @@ func TestGetHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService()
+	s := service.NewService([]model.Data{})
 	s.URLMap["OfsO5"] = "https://practicum.yandex.ru/"
 
 	r := chi.NewRouter()
@@ -156,7 +157,7 @@ func TestPostAPIShortHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService()
+	s := service.NewService([]model.Data{})
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			jsonBody, err := json.Marshal(map[string]string{
