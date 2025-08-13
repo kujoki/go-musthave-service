@@ -11,25 +11,10 @@ import (
 	"github.com/kujoki/go-musthave-service/internal/model"
 )
 
-func validateHeaders(prefix string, r *http.Request) bool {
-	contentType := r.Header.Get("Content-Type")
-	contentType = strings.ToLower(strings.TrimSpace(contentType))
-	return strings.HasPrefix(contentType, prefix)
-}
-
 func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 	log.Printf("base url is %s \n", baseURL)
 	return func(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
-
-	validHeaders := validateHeaders("text/plain", req)
-
-	if !validHeaders {
-		log.Println("incorrect headers")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`incorrect headers were suggested!`))
-		return
-	}
 
 	reqData, err := io.ReadAll(req.Body)
 	if err != nil || len(reqData) == 0 {
@@ -93,14 +78,6 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 		prefix := "application/json"
 		w.Header().Set("Content-Type", prefix)
 
-		validHeaders := validateHeaders(prefix, req)
-
-		if !validHeaders {
-			log.Println("incorrect headers")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`incorrect headers were suggested!`))
-			return
-		}
 		log.Println("decoding request")
 
 		var jsonReq model.Request
