@@ -16,7 +16,7 @@ func ParseFlags() *Config {
 
 	cfg.RunAddr = "localhost:8080"
 	cfg.BaseURL = "http://localhost:8080"
-	cfg.FileStoragePath = "C:/Users/Katya/Go_project_ya/go-musthave-service/output.json"
+	cfg.FileStoragePath = "./output.json"
 
 	_ = env.Parse(&cfg)
 

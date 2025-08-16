@@ -2,11 +2,11 @@ package main
 
 import (
 	"net/http"
+	"fmt"
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/config"
 	"github.com/kujoki/go-musthave-service/internal/db"
@@ -17,21 +17,20 @@ import (
 	"go.uber.org/zap"
 )
 
-var sugar zap.SugaredLogger
-
 func main() {
 	cfg := config.ParseFlags()
-    
-    if err := run(cfg); err != nil {
+    var sugar zap.SugaredLogger
+
+    if err := run(cfg, sugar); err != nil {
 		sugar.Fatalw(err.Error(), "event", "start server")
     }
 }
 
 
-func run(cfg *config.Config) error {
+func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	logger, err := zap.NewDevelopment()
 	if err != nil {
-        panic(err)
+        return fmt.Errorf("failed to create logger: %w", err)
     }
     defer logger.Sync()
 	sugar = *logger.Sugar()
@@ -48,8 +47,8 @@ func run(cfg *config.Config) error {
 	r := chi.NewRouter()
 
 	
-	r.Use(handler.GzipMiddleware)
-	r.Use(middleware.Compress(5, "application/json", "text/html"))
+	r.Use(handler.GzipMiddlewareRequest)
+	r.Use(handler.GzipMiddlewareResponse)
 
 	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s)
 	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s)
@@ -68,20 +67,30 @@ func run(cfg *config.Config) error {
         Addr:    cfg.RunAddr,
         Handler: r,
     }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-    stop := make(chan os.Signal, 1)
-    signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sugar.Infow("Running server", "address", cfg.RunAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			sugar.Fatalw(err.Error(), "event", "start server")
+		}
+	}()
 
-    go func() {
-        <-stop
-        sugar.Infow("Save data before shutting down")
-        data := s.AllData()
-        if err := cache.Save(cfg.FileStoragePath, data); err != nil {
-            sugar.Fatalw(err.Error(), "event", "save URL map")
-        }
-        os.Exit(0)
-    }()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	sugar.Infow("Running server", "address", cfg.RunAddr)
-    return srv.ListenAndServe()
+	<-sigChan 
+	cancel()
+	<-ctx.Done()
+
+	sugar.Infow("Save data before shutting down")
+
+	data = s.AllData()
+	if err := cache.Save(cfg.FileStoragePath, data); err != nil {
+		sugar.Errorw(err.Error(), "event", "save URL map")
+	}
+
+    sugar.Infow("Shutting down server gracefully")
+	return srv.Shutdown(context.Background())
 }
