@@ -4,30 +4,17 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"encoding/json"
 	"strings"
 	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/service"
+	"github.com/kujoki/go-musthave-service/internal/model"
 )
-
-func validateHeaders(r *http.Request) bool {
-	contentType := r.Header.Get("Content-Type")
-	contentType = strings.ToLower(strings.TrimSpace(contentType))
-	return strings.HasPrefix(contentType, "text/plain")
-}
 
 func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 	log.Printf("base url is %s \n", baseURL)
 	return func(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
-
-	validHeaders := validateHeaders(req)
-
-	if !validHeaders {
-		log.Println("incorrect headers")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`incorrect headers were suggested!`))
-		return
-	}
 
 	reqData, err := io.ReadAll(req.Body)
 	if err != nil || len(reqData) == 0 {
@@ -85,3 +72,43 @@ func WrapperGetSlashURL(s *service.Service) http.HandlerFunc {
 		log.Println("processing GET request was completed")
 		}
 	}
+
+func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		prefix := "application/json"
+		w.Header().Set("Content-Type", prefix)
+
+		log.Println("decoding request")
+
+		var jsonReq model.Request
+		dec := json.NewDecoder(req.Body)
+		
+		if err := dec.Decode(&jsonReq); err != nil {
+			log.Println("error during encoding")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if jsonReq.URL == "" {
+			log.Println("empty URL in body")
+			w.WriteHeader(http.StatusBadRequest)
+		return
+		}
+		
+		shortURL := s.CreateShortURL(jsonReq.URL)
+		log.Printf("a request was received for URL %s: %s \n", jsonReq.URL, shortURL)
+		fullURL := baseURL + "/" + shortURL
+    
+		resp := model.Response{
+			Result: fullURL,
+		}
+        
+		w.WriteHeader(http.StatusCreated)
+		enc := json.NewEncoder(w)
+		if err := enc.Encode(resp); err != nil {
+			log.Println("error encoding response")
+			return
+		}
+		log.Println("sending HTTP 201 response")
+	}
+}

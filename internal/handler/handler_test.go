@@ -3,14 +3,18 @@ package handler_test
 import (
 	"testing"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"github.com/kujoki/go-musthave-service/internal/handler"
 	"github.com/kujoki/go-musthave-service/internal/service"
+	"github.com/kujoki/go-musthave-service/internal/model"
+	"encoding/json"
 	"io"
 	"log"
 	"strings"
+	"bytes"
 )
 
 func TestPostHandler(t *testing.T) {
@@ -40,7 +44,7 @@ func TestPostHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService()
+	s := service.NewService([]model.Data{})
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body := strings.NewReader(test.url)
@@ -100,7 +104,7 @@ func TestGetHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService()
+	s := service.NewService([]model.Data{})
 	s.URLMap["OfsO5"] = "https://practicum.yandex.ru/"
 
 	r := chi.NewRouter()
@@ -123,5 +127,66 @@ func TestGetHandler(t *testing.T) {
 			assert.Equal(t, test.want.contentType, res.Header.Get("Content-Type"))
 			assert.Equal(t, test.want.location, res.Header.Get("Location"))
 		})
+	}
+}
+
+func TestPostAPIShortHandler(t *testing.T) {
+	type want struct {
+		code int
+		contentType string
+	}
+	tests := []struct {
+		name string
+		url string
+		want want
+	}{
+		{
+			name: "POST; status code 201",
+			url: "https://github.com/golang-standards/project-layout/blob/master/README_ru.md",
+			want: want{
+				code: 201,
+				contentType: "application/json",
+			},
+		}, 
+		{
+			name: "POST; status code 400", // Bad Request
+			url: "",
+			want: want{
+				code: 400,
+				contentType: "application/json",
+			},
+		},
+	}
+	s := service.NewService([]model.Data{})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			jsonBody, err := json.Marshal(map[string]string{
+				"url": test.url,
+			})
+			require.NoError(t, err)
+
+			request := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(jsonBody))
+			request.Header.Set("Content-Type", "application/jsonn")
+
+			w := httptest.NewRecorder()
+			postSlashHandler := handler.WrapperPostAPIShort("http://localhost:8080", s)
+            postSlashHandler(w, request)
+
+            res := w.Result()
+			defer res.Body.Close()
+
+			assert.Equal(t, test.want.code, res.StatusCode)
+			assert.Equal(t, test.want.contentType, res.Header.Get("Content-Type"))
+
+			resBody, err := io.ReadAll(res.Body)
+			assert.NoError(t, err)
+
+			log.Println("Response body:", string(resBody))
+
+			if test.want.code == http.StatusCreated {
+				assert.NotEmpty(t, strings.TrimSpace(string(resBody)), "Expected not empty for 201")
+			}
+		},
+		)
 	}
 }
