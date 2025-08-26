@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx"
 	"github.com/kujoki/go-musthave-service/internal/service"
 	"github.com/kujoki/go-musthave-service/internal/model"
 )
@@ -110,5 +111,15 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 			return
 		}
 		log.Println("sending HTTP 201 response")
+	}
+}
+
+func WrapperPingAPI(connPool *pgx.ConnPool) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		if connPool != nil {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 	}
 }

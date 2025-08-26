@@ -1,15 +1,17 @@
 package main
 
 import (
-	"net/http"
-	"fmt"
 	"context"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/config"
 	"github.com/kujoki/go-musthave-service/internal/db"
+	"github.com/kujoki/go-musthave-service/internal/repository"
 	"github.com/kujoki/go-musthave-service/internal/handler"
 	l "github.com/kujoki/go-musthave-service/internal/logger"
 	"github.com/kujoki/go-musthave-service/internal/model"
@@ -42,6 +44,8 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	}
 	sugar.Infow("Read storage", "filename", cfg.FileStoragePath)
 
+	dbConnection, _ := repository.CreatePool(cfg.DatabaseDSN)
+
 	s := service.NewService(data)
 
 	r := chi.NewRouter()
@@ -53,10 +57,12 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s)
 	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s)
 	getHandler := handler.WrapperGetSlashURL(s)
+	getPingHandler := handler.WrapperPingAPI(dbConnection)
 
 	r.Post("/",  l.WithLogging(sugar, postHandler))
 	r.Post("/api/shorten", l.WithLogging(sugar, postAPIShortHandler))
 	r.Get("/{ID}", l.WithLogging(sugar, getHandler))
+	r.Get("/ping", getPingHandler)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
@@ -89,6 +95,10 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	data = s.AllData()
 	if err := cache.Save(cfg.FileStoragePath, data); err != nil {
 		sugar.Errorw(err.Error(), "event", "save URL map")
+	}
+	if dbConnection != nil {
+		sugar.Infow("Close pool connection before shutting down")
+		defer dbConnection.Close()
 	}
 
     sugar.Infow("Shutting down server gracefully")
