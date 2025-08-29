@@ -45,9 +45,18 @@ func TestPostHandler(t *testing.T) {
 				contentType: "text/plain",
 			},
 		},
+		{
+			name: "POST; status code 409", // was used
+			url: "https://practicum.yandex.ru/",
+			want: want{
+				code: 409,
+				contentType: "text/plain",
+			},
+		},
 	}
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
+	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body := strings.NewReader(test.url)
@@ -151,6 +160,14 @@ func TestPostAPIShortHandler(t *testing.T) {
 				code: 201,
 				contentType: "application/json",
 			},
+		},
+		{
+			name: "POST; status code 409",
+			url: "https://practicum.yandex.ru/", // was used
+			want: want{
+				code: 409,
+				contentType: "application/json",
+			},
 		}, 
 		{
 			name: "POST; status code 400", // Bad Request
@@ -163,6 +180,7 @@ func TestPostAPIShortHandler(t *testing.T) {
 	}
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
+	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			jsonBody, err := json.Marshal(map[string]string{

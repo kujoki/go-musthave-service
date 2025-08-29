@@ -6,13 +6,13 @@ import (
 	"log"
 	"time"
 	"github.com/jackc/pgx"
+	//"github.com/kujoki/go-musthave-service/internal/model"
 )
 
 type PostgresRepository struct {
     Data map[string]string
     Pool *pgx.ConnPool
 }
-
 
 func parseConfig(connectionDSN string) (*pgx.ConnPoolConfig) {
 	config, err := pgx.ParseConnectionString(connectionDSN)
@@ -66,6 +66,12 @@ func (r *PostgresRepository) GetShortURL(longURL string) (string, bool, error) {
 }
 
 func (r *PostgresRepository) SaveURL(shortURL string, longURL string) error {
+	// log.Println(longURL)
+	// if _, exists, _ := r.GetLongURL(longURL); exists {
+	// 	log.Println(exists)
+	// 	return model.ErrURLExists
+	// }
+
     now := time.Now().UTC()
     _, err := r.Pool.Exec(`
         INSERT INTO url_data (short_url, long_url, created_at, updated_at)

@@ -43,9 +43,15 @@ func generateRandomString(length int) string {
 }
 
 
-func (s *Service) ReverseMap(shortURL string) (string, bool, error) {
+func (s *Service) CheckOriginURLValue(shortURL string) (string, bool, error) {
     longURL, ok, err := s.Repo.GetLongURL(shortURL)
     return longURL, ok, err
+}
+
+
+func (s *Service) CheckShortURLValue(longURL string) (string, bool, error) {
+    shortURL, ok, err := s.Repo.GetShortURL(longURL)
+    return shortURL, ok, err
 }
 
 

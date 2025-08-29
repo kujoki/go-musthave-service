@@ -1,6 +1,11 @@
 package model
 
-import "strconv"
+import (
+    "errors"
+    "strconv"
+)
+
+var ErrURLExists = errors.New("URL already exists")
 
 type Request struct {
 	URL string `json:"url"`

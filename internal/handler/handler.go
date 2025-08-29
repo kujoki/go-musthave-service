@@ -1,16 +1,25 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
-	"encoding/json"
 	"strings"
 	"github.com/go-chi/chi/v5"
-	"github.com/kujoki/go-musthave-service/internal/storage"
-	"github.com/kujoki/go-musthave-service/internal/service"
 	"github.com/kujoki/go-musthave-service/internal/model"
+	"github.com/kujoki/go-musthave-service/internal/service"
+	"github.com/kujoki/go-musthave-service/internal/storage"
 )
+
+func CheckExistURL(s *service.Service, originURL string) (string, error) {
+	shortURL, ok, _ := s.CheckShortURLValue(originURL)
+	if ok {
+		return shortURL, model.ErrURLExists
+	}
+	return "", nil
+}
 
 func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 	log.Printf("base url is %s \n", baseURL)
@@ -33,9 +42,22 @@ func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 
 	log.Printf("origin URL is extracted: %s \n", originURL)
 
-	shortURL, _ := s.CreateShortURL(originURL)
+	shortURL, err := CheckExistURL(s, originURL)
+
+	var fullURL string
+	if errors.Is(err, model.ErrURLExists) {
+		w.WriteHeader(http.StatusConflict)
+		fullURL = baseURL + "/" + shortURL
+		w.Write([]byte(fullURL))
+		return
+	}
+
+	shortURL, err = s.CreateShortURL(originURL)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+	}
 	log.Printf("a request was received for URL %s: %s \n", originURL, shortURL)
-	fullURL := baseURL + "/" + shortURL
+	fullURL = baseURL + "/" + shortURL
 
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(fullURL))
@@ -57,7 +79,7 @@ func WrapperGetSlashURL(s *service.Service) http.HandlerFunc {
 
 		log.Printf("the short url is %s \n", shortURL)
 
-		originURL, ok, _ := s.ReverseMap(shortURL)
+		originURL, ok, _ := s.CheckOriginURLValue(shortURL)
 		log.Printf("the result of check was received: %t \n", ok)
 
 		if !ok || originURL == "" {
@@ -92,19 +114,39 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 		if jsonReq.URL == "" {
 			log.Println("empty URL in body")
 			w.WriteHeader(http.StatusBadRequest)
-		return
+			return
+		}
+
+		var fullURL string
+		var resp model.Response
+		var enc *json.Encoder
+
+		shortURL, err := CheckExistURL(s, jsonReq.URL)
+		if errors.Is(err, model.ErrURLExists) {
+			w.WriteHeader(http.StatusConflict)
+			fullURL = baseURL + "/" + shortURL
+			resp = model.Response{
+				Result: fullURL,
+			}
+			enc = json.NewEncoder(w)
+			_ = enc.Encode(resp)
+			return
 		}
 		
-		shortURL, _ := s.CreateShortURL(jsonReq.URL)
+		shortURL, err = s.CreateShortURL(jsonReq.URL)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		log.Printf("a request was received for URL %s: %s \n", jsonReq.URL, shortURL)
-		fullURL := baseURL + "/" + shortURL
+		fullURL = baseURL + "/" + shortURL
     
-		resp := model.Response{
+		resp = model.Response{
 			Result: fullURL,
 		}
         
 		w.WriteHeader(http.StatusCreated)
-		enc := json.NewEncoder(w)
+		enc = json.NewEncoder(w)
 		if err := enc.Encode(resp); err != nil {
 			log.Println("error encoding response")
 			return
@@ -135,13 +177,14 @@ func WrapperPostBatchAPI(baseURL string, s *service.Service) http.HandlerFunc {
 		var jsonReq []model.BatchRequest
 		json.NewDecoder(req.Body).Decode(&jsonReq)
         if len(jsonReq) == 0 {
-            w.WriteHeader(http.StatusBadRequest)
+            w.WriteHeader(http.StatusBadRequest) 
             return
         }
 
 		var jsonResp []model.BatchResponse
 		for _, item := range jsonReq {
             shortURL, _ := s.CreateShortURL(item.OriginalURL)
+
 			fullURL := baseURL + "/" + shortURL
             jsonResp = append(jsonResp, model.BatchResponse{
                 CorrelationID: item.CorrelationID,
