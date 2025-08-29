@@ -124,3 +124,37 @@ func WrapperPingAPI(repo storage.URLRepository) http.HandlerFunc {
         }
     }
 }
+
+func WrapperPostBatchAPI(baseURL string, s *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		prefix := "application/json"
+		w.Header().Set("Content-Type", prefix)
+
+		log.Println("decoding request")
+
+		var jsonReq []model.BatchRequest
+		json.NewDecoder(req.Body).Decode(&jsonReq)
+        if len(jsonReq) == 0 {
+            w.WriteHeader(http.StatusBadRequest)
+            return
+        }
+
+		var jsonResp []model.BatchResponse
+		for _, item := range jsonReq {
+            shortURL, _ := s.CreateShortURL(item.OriginalURL)
+			fullURL := baseURL + "/" + shortURL
+            jsonResp = append(jsonResp, model.BatchResponse{
+                CorrelationID: item.CorrelationID,
+                ShortURL: fullURL,
+            })
+        }
+
+        w.WriteHeader(http.StatusCreated)
+		enc := json.NewEncoder(w)
+		if err := enc.Encode(jsonResp); err != nil {
+			log.Println("error encoding response")
+			return
+		}
+		log.Println("sending HTTP 201 response")
+	}
+}

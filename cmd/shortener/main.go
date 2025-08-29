@@ -77,11 +77,13 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 
 	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s)
 	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s)
+	postBatchAPIHandler := handler.WrapperPostBatchAPI(cfg.BaseURL, s)
 	getHandler := handler.WrapperGetSlashURL(s)
 	getPingHandler := handler.WrapperPingAPI(repo)
 
 	r.Post("/",  l.WithLogging(sugar, postHandler))
 	r.Post("/api/shorten", l.WithLogging(sugar, postAPIShortHandler))
+	r.Post("/api/shorten/batch", l.WithLogging(sugar, postBatchAPIHandler))
 	r.Get("/{ID}", l.WithLogging(sugar, getHandler))
 	r.Get("/ping", getPingHandler)
 

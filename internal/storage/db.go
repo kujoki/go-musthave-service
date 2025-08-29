@@ -56,10 +56,10 @@ func (r *PostgresRepository) GetShortURL(longURL string) (string, bool, error) {
 	var shortURL string
     err := r.Pool.QueryRow("SELECT short_url FROM url_data WHERE long_url=$1", longURL).Scan(&shortURL)
     if errors.Is(err, pgx.ErrNoRows) {
-		log.Printf("error during query: %v \n", err)
+		log.Printf("error during get short url query - there is no rows: %v \n", err)
         return "", false, nil
     } else if err != nil {
-		log.Printf("error during query: %v \n", err)
+		log.Printf("error during get short url query: %v \n", err)
         return "", false, err
     }
     return shortURL, true, nil
@@ -79,7 +79,7 @@ func (r *PostgresRepository) SaveURL(shortURL string, longURL string) error {
 func (r *PostgresRepository) GetAll() map[string]string {
 	rows, err := r.Pool.Query(`SELECT short_url, long_url FROM url_data`)
 	if err != nil {
-		log.Printf("error during query: %v", err)
+		log.Printf("error during get all data query: %v", err)
 		return nil
 	}
 	defer rows.Close()

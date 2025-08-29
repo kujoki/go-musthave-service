@@ -11,14 +11,14 @@ import (
 const symbols = "zxcvbnmasdfghjklqwertyuiopZXCVBNMASDFGHJKLQWERTYUIOP1234567890"
 
 type Service struct {
-    repo   storage.URLRepository
+    Repo   storage.URLRepository
     lenURL int
     mu     sync.Mutex
 }
 
 func NewService(repo storage.URLRepository, lenURL int) *Service {
     return &Service{
-        repo:   repo,
+        Repo:   repo,
         lenURL: lenURL,
     }
 }
@@ -44,7 +44,7 @@ func generateRandomString(length int) string {
 
 
 func (s *Service) ReverseMap(shortURL string) (string, bool, error) {
-    longURL, ok, err := s.repo.GetLongURL(shortURL)
+    longURL, ok, err := s.Repo.GetLongURL(shortURL)
     return longURL, ok, err
 }
 
@@ -53,7 +53,7 @@ func (s *Service) CreateShortURL(originURL string) (string, error) {
     s.mu.Lock()
     defer s.mu.Unlock()
 
-    if short, found, _ := s.repo.GetShortURL(originURL); found {
+    if short, found, _ := s.Repo.GetShortURL(originURL); found {
         return short, nil
     }
 
@@ -61,8 +61,8 @@ func (s *Service) CreateShortURL(originURL string) (string, error) {
     for {
         shortURL = generateRandomString(s.lenURL)
 
-        if _, found, _ := s.repo.GetLongURL(shortURL); !found {
-            if err := s.repo.SaveURL(shortURL, originURL); err != nil {
+        if _, found, _ := s.Repo.GetLongURL(shortURL); !found {
+            if err := s.Repo.SaveURL(shortURL, originURL); err != nil {
                 return "", err
             }
             log.Printf("url %s has been saved -> %s\n", shortURL, originURL)
@@ -73,5 +73,5 @@ func (s *Service) CreateShortURL(originURL string) (string, error) {
 
 
 func (s *Service) AllData() map[string]string {
-    return s.repo.GetAll()
+    return s.Repo.GetAll()
 }
