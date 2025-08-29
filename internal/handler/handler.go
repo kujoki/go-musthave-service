@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx"
+	"github.com/kujoki/go-musthave-service/internal/storage"
 	"github.com/kujoki/go-musthave-service/internal/service"
 	"github.com/kujoki/go-musthave-service/internal/model"
 )
@@ -24,7 +24,6 @@ func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 		w.Write([]byte(`failed to extract body contents`))
 		return
 	}
-
 	originURL := strings.TrimSpace(string(reqData))
 	if originURL == "" {
 		log.Println("empty URL in body")
@@ -34,7 +33,7 @@ func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 
 	log.Printf("origin URL is extracted: %s \n", originURL)
 
-	shortURL := s.CreateShortURL(originURL)
+	shortURL, _ := s.CreateShortURL(originURL)
 	log.Printf("a request was received for URL %s: %s \n", originURL, shortURL)
 	fullURL := baseURL + "/" + shortURL
 
@@ -58,7 +57,7 @@ func WrapperGetSlashURL(s *service.Service) http.HandlerFunc {
 
 		log.Printf("the short url is %s \n", shortURL)
 
-		originURL, ok := s.ReverseMap(shortURL)
+		originURL, ok, _ := s.ReverseMap(shortURL)
 		log.Printf("the result of check was received: %t \n", ok)
 
 		if !ok || originURL == "" {
@@ -96,7 +95,7 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 		return
 		}
 		
-		shortURL := s.CreateShortURL(jsonReq.URL)
+		shortURL, _ := s.CreateShortURL(jsonReq.URL)
 		log.Printf("a request was received for URL %s: %s \n", jsonReq.URL, shortURL)
 		fullURL := baseURL + "/" + shortURL
     
@@ -114,12 +113,14 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 	}
 }
 
-func WrapperPingAPI(connPool *pgx.ConnPool) http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-		if connPool != nil {
-			w.WriteHeader(http.StatusOK)
-		} else {
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	}
+func WrapperPingAPI(repo storage.URLRepository) http.HandlerFunc {
+    return func(w http.ResponseWriter, req *http.Request) {
+        ctx := req.Context()
+        res := repo.Ping(ctx)
+		if !res {
+            w.WriteHeader(http.StatusInternalServerError)
+        } else {
+            w.WriteHeader(http.StatusOK)
+        }
+    }
 }

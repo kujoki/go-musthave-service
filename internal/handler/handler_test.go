@@ -1,20 +1,20 @@
 package handler_test
 
 import (
-	"testing"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/go-chi/chi/v5"
-	"net/http"
-	"net/http/httptest"
-	"github.com/kujoki/go-musthave-service/internal/handler"
-	"github.com/kujoki/go-musthave-service/internal/service"
-	"github.com/kujoki/go-musthave-service/internal/model"
+	"bytes"
 	"encoding/json"
 	"io"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"strings"
-	"bytes"
+	"testing"
+	"github.com/go-chi/chi/v5"
+	"github.com/kujoki/go-musthave-service/internal/handler"
+	"github.com/kujoki/go-musthave-service/internal/service"
+	"github.com/kujoki/go-musthave-service/internal/storage"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPostHandler(t *testing.T) {
@@ -44,7 +44,8 @@ func TestPostHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService([]model.Data{})
+	repo := storage.NewMemoryRepository()
+	s := service.NewService(repo, 5)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body := strings.NewReader(test.url)
@@ -104,8 +105,9 @@ func TestGetHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService([]model.Data{})
-	s.URLMap["OfsO5"] = "https://practicum.yandex.ru/"
+	repo := storage.NewMemoryRepository()
+	s := service.NewService(repo, 5)
+	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 
 	r := chi.NewRouter()
 	r.Get("/{ID}", handler.WrapperGetSlashURL(s))
@@ -157,7 +159,8 @@ func TestPostAPIShortHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService([]model.Data{})
+	repo := storage.NewMemoryRepository()
+	s := service.NewService(repo, 5)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			jsonBody, err := json.Marshal(map[string]string{

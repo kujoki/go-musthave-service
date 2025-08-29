@@ -1,21 +1,24 @@
-package cache
+package storage
 
 import (
 	"os"
 	"encoding/json"
     "io"
+	"log"
     "github.com/kujoki/go-musthave-service/internal/model"
 )
 
 func Load(fname string) ([]model.Data, error) {
 	file, err := os.OpenFile(fname, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
+		log.Println("error with open file: ", err)
 		return nil, err
 	}
 	defer file.Close()
 
 	dataBytes, err := io.ReadAll(file)
 	if err != nil {
+		log.Println("reads from r until an error: ", err)
 		return nil, err
 	}
 
@@ -25,6 +28,7 @@ func Load(fname string) ([]model.Data, error) {
 
 	var items []model.Data
 	if err := json.Unmarshal(dataBytes, &items); err != nil {
+		log.Println("error while encoding: ", err)
 		return nil, err
 	}
 	return items, nil

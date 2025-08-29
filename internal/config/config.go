@@ -17,15 +17,15 @@ func ParseFlags() *Config {
 
 	cfg.RunAddr = "localhost:8080"
 	cfg.BaseURL = "http://localhost:8080"
-	cfg.FileStoragePath = "./output.json"
-	cfg.DatabaseDSN = "user=url_service_user password=zmxncbv65 dbname=repository sslmode=disable host=localhost port=5432"
+	cfg.FileStoragePath = "" //"./output.json"
+	cfg.DatabaseDSN = "" //"user=postgres password=zmxncbv dbname=repository sslmode=disable host=localhost port=5432"
 
 	_ = env.Parse(&cfg)
 
 	flag.StringVar(&cfg.RunAddr, "a", cfg.RunAddr, "HTTP server listen address")
 	flag.StringVar(&cfg.BaseURL, "b", cfg.BaseURL, "Base URL used for short links")
 	flag.StringVar(&cfg.FileStoragePath, "f", cfg.FileStoragePath, "File for output data")
-	flag.StringVar(&cfg.DatabaseDSN, "d", cfg.DatabaseDSN, "File for output data")
+	flag.StringVar(&cfg.DatabaseDSN, "d", cfg.DatabaseDSN, "DB for output data")
 	flag.Parse()  
 	return &cfg
 }

@@ -4,23 +4,23 @@ import (
 	"log"
 	"math/rand"
 	"sync"
-	"strconv"
 	"github.com/kujoki/go-musthave-service/internal/model"
+	"github.com/kujoki/go-musthave-service/internal/storage"
 )
 
 const symbols = "zxcvbnmasdfghjklqwertyuiopZXCVBNMASDFGHJKLQWERTYUIOP1234567890"
 
 type Service struct {
-	URLMap map[string]string
-	lenURL int
-	mu sync.RWMutex
+    repo   storage.URLRepository
+    lenURL int
+    mu     sync.Mutex
 }
 
-func MaxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+func NewService(repo storage.URLRepository, lenURL int) *Service {
+    return &Service{
+        repo:   repo,
+        lenURL: lenURL,
+    }
 }
 
 func CreateURLMap(data []model.Data) (map[string]string, int) {
@@ -33,23 +33,9 @@ func CreateURLMap(data []model.Data) (map[string]string, int) {
     return URLMap, lenURL
 }
 
-func NewService(data []model.Data) *Service {
-	URLMap, lenURL := CreateURLMap(data)
-	return &Service{
-		URLMap: URLMap,
-		lenURL: lenURL,
-	}
-}
-
-func (s *Service) ReverseMap(shortURL string) (originURL string, ok bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	originURL, ok = s.URLMap[shortURL]
-	return originURL, ok
-}
 
 func generateRandomString(length int) string {
-	b := make([]byte, length)
+    b := make([]byte, length)
     for i := range b {
         b[i] = symbols[rand.Intn(len(symbols))]
     }
@@ -57,44 +43,35 @@ func generateRandomString(length int) string {
 }
 
 
-func (s *Service) CreateShortURL(originURL string) string {
-	s.mu.Lock() 
-	defer s.mu.Unlock()
-
-	log.Println("check if url was generated")
-	log.Println("URLMap", s.URLMap)
-	for short, origin := range s.URLMap {
-		if origin == originURL {
-			log.Println("url for this value was already generated")
-			return short
-		}
-	}
-
-	var shortURL string
-
-	for {
-		shortURL = generateRandomString(s.lenURL)
-		if _, exists := s.URLMap[shortURL]; !exists {
-			s.URLMap[shortURL] = originURL
-			log.Printf("url %s has been saved to map \n", shortURL)
-			return shortURL
-		}
-	}
+func (s *Service) ReverseMap(shortURL string) (string, bool, error) {
+    longURL, ok, err := s.repo.GetLongURL(shortURL)
+    return longURL, ok, err
 }
 
-func (s *Service) AllData() []model.Data {
-    s.mu.RLock()
-    defer s.mu.RUnlock()
 
-    data := make([]model.Data, 0, len(s.URLMap))
-	i := 1 
-    for short, orig := range s.URLMap {
-        data = append(data, model.Data{
-            UUID:        strconv.Itoa(i),
-            ShortURL:    short,
-            OriginalURL: orig,
-        })
-		i++
+func (s *Service) CreateShortURL(originURL string) (string, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    if short, found, _ := s.repo.GetShortURL(originURL); found {
+        return short, nil
     }
-    return data
+
+    var shortURL string
+    for {
+        shortURL = generateRandomString(s.lenURL)
+
+        if _, found, _ := s.repo.GetLongURL(shortURL); !found {
+            if err := s.repo.SaveURL(shortURL, originURL); err != nil {
+                return "", err
+            }
+            log.Printf("url %s has been saved -> %s\n", shortURL, originURL)
+            return shortURL, nil
+        }
+    }
+}
+
+
+func (s *Service) AllData() map[string]string {
+    return s.repo.GetAll()
 }
