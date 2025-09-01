@@ -47,8 +47,6 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 			sugar.Fatalf("failed to connect to postgres: %v", err)
 		}
 		repo = postgresRepo
-		postgresRepo.Data = postgresRepo.GetAll()
-		//sugar.Infof("storage: %+v", postgresRepo.Data)
 	} else {
 		memoryRepo := storage.NewMemoryRepository()
 		repo = memoryRepo
@@ -60,14 +58,13 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 			} else {
 				memoryRepo.Data = model.DataSliceToMap(loaded)
 			}
-			//sugar.Infof("storage: %+v", memoryRepo.Data)
 			sugar.Infow("read storage", "filename", cfg.FileStoragePath)
 		} else {
 			memoryRepo.Data = make(map[string]string)
 		}
 	}
 	
-	s := service.NewService(repo, 5)
+	s := service.NewService(repo, cfg.ShortURLLen)
 
 	r := chi.NewRouter()
 

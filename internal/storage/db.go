@@ -10,7 +10,6 @@ import (
 )
 
 type PostgresRepository struct {
-    Data map[string]string
     Pool *pgx.ConnPool
 }
 
@@ -30,14 +29,13 @@ func parseConfig(connectionDSN string) (*pgx.ConnPoolConfig) {
 
 func NewPostgresRepository(connectionDSN string) (*PostgresRepository, error) {
 	config := parseConfig(connectionDSN)
-	data := make(map[string]string)
 	pool, err := pgx.NewConnPool(*config)
 	if err != nil {
 		log.Printf("failed to create pool: %v", err)
 		return nil, err
 	}
 	log.Println("create connection pool")
-	return &PostgresRepository{Data: data, Pool: pool}, nil
+	return &PostgresRepository{Pool: pool}, nil
 }
 
 
@@ -66,12 +64,6 @@ func (r *PostgresRepository) GetShortURL(longURL string) (string, bool, error) {
 }
 
 func (r *PostgresRepository) SaveURL(shortURL string, longURL string) error {
-	// log.Println(longURL)
-	// if _, exists, _ := r.GetLongURL(longURL); exists {
-	// 	log.Println(exists)
-	// 	return model.ErrURLExists
-	// }
-
     now := time.Now().UTC()
     _, err := r.Pool.Exec(`
         INSERT INTO url_data (short_url, long_url, created_at, updated_at)

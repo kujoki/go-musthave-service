@@ -10,6 +10,7 @@ type Config struct {
 	BaseURL string `env:"BASE_URL"`
 	FileStoragePath  string `env:"FILE_STORAGE_PATH"`
 	DatabaseDSN string `env:"DATABASE_DSN"`
+	ShortURLLen int `env:"SHORT_URL_LEN"`
 }
 
 func ParseFlags() *Config {
@@ -19,6 +20,7 @@ func ParseFlags() *Config {
 	cfg.BaseURL = "http://localhost:8080"
 	cfg.FileStoragePath = "" //"./output.json"
 	cfg.DatabaseDSN = "" //"user=postgres password=zmxncbv dbname=repository sslmode=disable host=localhost port=5432"
+	cfg.ShortURLLen = 7
 
 	_ = env.Parse(&cfg)
 

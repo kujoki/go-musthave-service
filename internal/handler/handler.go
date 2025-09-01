@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/model"
@@ -14,7 +15,11 @@ import (
 )
 
 func CheckExistURL(s *service.Service, originURL string) (string, error) {
-	shortURL, ok, _ := s.CheckShortURLValue(originURL)
+	shortURL, ok, err := s.CheckShortURLValue(originURL)
+	if err != nil {
+		log.Println("there is an error during checking URL existing")
+		return "", err
+	}
 	if ok {
 		return shortURL, model.ErrURLExists
 	}
@@ -47,9 +52,12 @@ func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 	var fullURL string
 	if errors.Is(err, model.ErrURLExists) {
 		w.WriteHeader(http.StatusConflict)
-		fullURL = baseURL + "/" + shortURL
+		fullURL, _ = url.JoinPath(baseURL, shortURL)
 		w.Write([]byte(fullURL))
 		return
+	}  else if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
 	}
 
 	shortURL, err = s.CreateShortURL(originURL)
@@ -57,7 +65,7 @@ func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	log.Printf("a request was received for URL %s: %s \n", originURL, shortURL)
-	fullURL = baseURL + "/" + shortURL
+	fullURL, _ = url.JoinPath(baseURL, shortURL)
 
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(fullURL))
@@ -124,12 +132,15 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 		shortURL, err := CheckExistURL(s, jsonReq.URL)
 		if errors.Is(err, model.ErrURLExists) {
 			w.WriteHeader(http.StatusConflict)
-			fullURL = baseURL + "/" + shortURL
+			fullURL, _ = url.JoinPath(baseURL, shortURL)
 			resp = model.Response{
 				Result: fullURL,
 			}
 			enc = json.NewEncoder(w)
 			_ = enc.Encode(resp)
+			return
+		} else if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		
@@ -139,7 +150,7 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 			return
 		}
 		log.Printf("a request was received for URL %s: %s \n", jsonReq.URL, shortURL)
-		fullURL = baseURL + "/" + shortURL
+		fullURL, _ = url.JoinPath(baseURL, shortURL)
     
 		resp = model.Response{
 			Result: fullURL,
