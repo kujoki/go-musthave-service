@@ -31,6 +31,11 @@ type Data struct {
 	OriginalURL string `json:"original_url"`
 }
 
+type UserURL struct {
+    ShortURL    string `json:"short_url"`
+    OriginalURL string `json:"original_url"`
+}
+
 func MapToDataSlice(dataMap map[string]string) []Data {
     dataSlice := make([]Data, 0, len(dataMap))
     i := 1

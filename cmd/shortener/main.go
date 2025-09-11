@@ -72,17 +72,21 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	r.Use(handler.GzipMiddlewareRequest)
 	r.Use(handler.GzipMiddlewareResponse)
 
-	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s)
-	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s)
-	postBatchAPIHandler := handler.WrapperPostBatchAPI(cfg.BaseURL, s)
-	getHandler := handler.WrapperGetSlashURL(s)
-	getPingHandler := handler.WrapperPingAPI(repo)
+	builder := handler.NewJWTBuild(cfg.SecretToken, cfg.ApplicationName, cfg.UserCookieName)
+
+	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s, builder)
+	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s, builder)
+	postBatchAPIHandler := handler.WrapperPostBatchAPI(cfg.BaseURL, s, builder)
+	getHandler := handler.WrapperGetSlashURL(s, builder)
+	getPingHandler := handler.WrapperPingAPI(repo, builder)
+	getUsersURL := handler.WrapperGetUsers(cfg.BaseURL, s, builder)
 
 	r.Post("/",  l.WithLogging(sugar, postHandler))
 	r.Post("/api/shorten", l.WithLogging(sugar, postAPIShortHandler))
 	r.Post("/api/shorten/batch", l.WithLogging(sugar, postBatchAPIHandler))
 	r.Get("/{ID}", l.WithLogging(sugar, getHandler))
 	r.Get("/ping", getPingHandler)
+	r.Get("/api/user/urls", getUsersURL)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)

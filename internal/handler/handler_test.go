@@ -9,7 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
+	"time"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/handler"
 	"github.com/kujoki/go-musthave-service/internal/model"
@@ -19,19 +20,58 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func setCookieTest(hasUserUUID bool, builder *handler.JWTBuilder, request *http.Request) () {
+	var tokenString string
+	type Claims struct {
+    	jwt.RegisteredClaims
+	}
+	if hasUserUUID {
+		userUUID := builder.GenerateUserUUID()
+		tokenString, _ = builder.SignUserUUID(userUUID)
+		request.AddCookie(&http.Cookie{
+		Name:  builder.UserCookieName,
+		Value: tokenString,
+	})
+	} else {
+		token := jwt.NewWithClaims(
+		jwt.SigningMethodHS256,
+		Claims {
+			RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 3)),
+			},
+		},
+		)
+		tokenString, _ = builder.Sign(token)
+		request.AddCookie(&http.Cookie{
+		Name:  builder.UserCookieName,
+		Value: tokenString,
+		})
+	}
+}
+
+
 func TestPostHandler(t *testing.T) {
 	type want struct {
 		code int
 		contentType string
 	}
+	type cookie struct {
+		isSet bool
+		hasUserUUID bool
+	}
 	tests := []struct {
 		name string
 		url string
+		userCookie cookie
 		want want
 	}{
 		{
 			name: "POST; status code 201",
 			url: "https://github.com/golang-standards/project-layout/blob/master/README_ru.md",
+			userCookie: cookie{
+				isSet: false,
+				hasUserUUID: false,
+			},
 			want: want{
 				code: 201,
 				contentType: "text/plain",
@@ -40,6 +80,10 @@ func TestPostHandler(t *testing.T) {
 		{
 			name: "POST; status code 400", // Bad Request
 			url: "",
+			userCookie: cookie{
+				isSet: false,
+				hasUserUUID: false,
+			},
 			want: want{
 				code: 400,
 				contentType: "text/plain",
@@ -48,24 +92,57 @@ func TestPostHandler(t *testing.T) {
 		{
 			name: "POST; status code 409", // was used
 			url: "https://practicum.yandex.ru/",
+			userCookie: cookie{
+				isSet: false,
+				hasUserUUID: false,
+			},			
 			want: want{
 				code: 409,
+				contentType: "text/plain",
+			},
+		},
+		{
+			name: "POST; has cookie without userUUID", // has no auth
+			url: "https://without.auth.yandex.ru/",
+			userCookie: cookie{
+				isSet: true,
+				hasUserUUID: false,
+			},			
+			want: want{
+				code: 401,
+				contentType: "text/plain",
+			},
+		},
+		{
+			name: "POST; has cookie with userUUID", // has auth
+			url: "https://auth.yandex.ru/",
+			userCookie: cookie{
+				isSet: true,
+				hasUserUUID: true,
+			},			
+			want: want{
+				code: 201,
 				contentType: "text/plain",
 			},
 		},
 	}
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
+	builder := handler.NewJWTBuild("secret", "must-test-service", "auth_user")
 	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body := strings.NewReader(test.url)
-
 			request := httptest.NewRequest(http.MethodPost, "/", body)
+
+			if test.userCookie.isSet {
+				setCookieTest(test.userCookie.hasUserUUID, builder, request)
+			}
+
 			request.Header.Set("Content-Type", "text/plain")
 
 			w := httptest.NewRecorder()
-			postSlashHandler := handler.WrapperPostSlash("http://localhost:8080", s)
+			postSlashHandler := handler.WrapperPostSlash("http://localhost:8080", s, builder)
             postSlashHandler(w, request)
 
             res := w.Result()
@@ -118,10 +195,11 @@ func TestGetHandler(t *testing.T) {
 	}
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
+	builder := handler.NewJWTBuild("secret", "must-test-service", "auth_user")
 	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 
 	r := chi.NewRouter()
-	r.Get("/{ID}", handler.WrapperGetSlashURL(s))
+	r.Get("/{ID}", handler.WrapperGetSlashURL(s, builder))
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -130,7 +208,7 @@ func TestGetHandler(t *testing.T) {
 
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, request)
-            getSlashHandler := handler.WrapperGetSlashURL(s)
+            getSlashHandler := handler.WrapperGetSlashURL(s, builder)
 			getSlashHandler(w, request)
 
             res := w.Result()
@@ -180,6 +258,7 @@ func TestPostAPIShortHandler(t *testing.T) {
 	}
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
+	builder := handler.NewJWTBuild("secret", "must-test-service", "auth_user")
 	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -192,7 +271,7 @@ func TestPostAPIShortHandler(t *testing.T) {
 			request.Header.Set("Content-Type", "application/jsonn")
 
 			w := httptest.NewRecorder()
-			postSlashHandler := handler.WrapperPostAPIShort("http://localhost:8080", s)
+			postSlashHandler := handler.WrapperPostAPIShort("http://localhost:8080", s, builder)
             postSlashHandler(w, request)
 
             res := w.Result()
@@ -247,6 +326,7 @@ func TesPostBatchAPI(t *testing.T) {
 	}
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
+	builder := handler.NewJWTBuild("secret", "must-test-service", "auth_user")
 	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -257,7 +337,7 @@ func TesPostBatchAPI(t *testing.T) {
 			request.Header.Set("Content-Type", "application/json")
 
 			w := httptest.NewRecorder()
-			postBatchHandler := handler.WrapperPostBatchAPI("http://localhost:8080", s)
+			postBatchHandler := handler.WrapperPostBatchAPI("http://localhost:8080", s, builder)
             postBatchHandler(w, request)
 
             res := w.Result()
