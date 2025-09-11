@@ -1,15 +1,30 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
-	"encoding/json"
+	"net/url"
 	"strings"
 	"github.com/go-chi/chi/v5"
-	"github.com/kujoki/go-musthave-service/internal/service"
 	"github.com/kujoki/go-musthave-service/internal/model"
+	"github.com/kujoki/go-musthave-service/internal/service"
+	"github.com/kujoki/go-musthave-service/internal/storage"
 )
+
+func CheckExistURL(s *service.Service, originURL string) (string, error) {
+	shortURL, ok, err := s.CheckShortURLValue(originURL)
+	if err != nil {
+		log.Println("there is an error during checking URL existing")
+		return "", err
+	}
+	if ok {
+		return shortURL, model.ErrURLExists
+	}
+	return "", nil
+}
 
 func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 	log.Printf("base url is %s \n", baseURL)
@@ -23,7 +38,6 @@ func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 		w.Write([]byte(`failed to extract body contents`))
 		return
 	}
-
 	originURL := strings.TrimSpace(string(reqData))
 	if originURL == "" {
 		log.Println("empty URL in body")
@@ -33,9 +47,25 @@ func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 
 	log.Printf("origin URL is extracted: %s \n", originURL)
 
-	shortURL := s.CreateShortURL(originURL)
+	shortURL, err := CheckExistURL(s, originURL)
+
+	var fullURL string
+	if errors.Is(err, model.ErrURLExists) {
+		w.WriteHeader(http.StatusConflict)
+		fullURL, _ = url.JoinPath(baseURL, shortURL)
+		w.Write([]byte(fullURL))
+		return
+	}  else if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+	}
+
+	shortURL, err = s.CreateShortURL(originURL)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+	}
 	log.Printf("a request was received for URL %s: %s \n", originURL, shortURL)
-	fullURL := baseURL + "/" + shortURL
+	fullURL, _ = url.JoinPath(baseURL, shortURL)
 
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(fullURL))
@@ -57,7 +87,7 @@ func WrapperGetSlashURL(s *service.Service) http.HandlerFunc {
 
 		log.Printf("the short url is %s \n", shortURL)
 
-		originURL, ok := s.ReverseMap(shortURL)
+		originURL, ok, _ := s.CheckOriginURLValue(shortURL)
 		log.Printf("the result of check was received: %t \n", ok)
 
 		if !ok || originURL == "" {
@@ -92,20 +122,90 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 		if jsonReq.URL == "" {
 			log.Println("empty URL in body")
 			w.WriteHeader(http.StatusBadRequest)
-		return
+			return
+		}
+
+		var fullURL string
+		var resp model.Response
+		var enc *json.Encoder
+
+		shortURL, err := CheckExistURL(s, jsonReq.URL)
+		if errors.Is(err, model.ErrURLExists) {
+			w.WriteHeader(http.StatusConflict)
+			fullURL, _ = url.JoinPath(baseURL, shortURL)
+			resp = model.Response{
+				Result: fullURL,
+			}
+			enc = json.NewEncoder(w)
+			_ = enc.Encode(resp)
+			return
+		} else if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		
-		shortURL := s.CreateShortURL(jsonReq.URL)
+		shortURL, err = s.CreateShortURL(jsonReq.URL)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		log.Printf("a request was received for URL %s: %s \n", jsonReq.URL, shortURL)
-		fullURL := baseURL + "/" + shortURL
+		fullURL, _ = url.JoinPath(baseURL, shortURL)
     
-		resp := model.Response{
+		resp = model.Response{
 			Result: fullURL,
 		}
         
 		w.WriteHeader(http.StatusCreated)
-		enc := json.NewEncoder(w)
+		enc = json.NewEncoder(w)
 		if err := enc.Encode(resp); err != nil {
+			log.Println("error encoding response")
+			return
+		}
+		log.Println("sending HTTP 201 response")
+	}
+}
+
+func WrapperPingAPI(repo storage.URLRepository) http.HandlerFunc {
+    return func(w http.ResponseWriter, req *http.Request) {
+        ctx := req.Context()
+        res := repo.Ping(ctx)
+		if !res {
+            w.WriteHeader(http.StatusInternalServerError)
+        } else {
+            w.WriteHeader(http.StatusOK)
+        }
+    }
+}
+
+func WrapperPostBatchAPI(baseURL string, s *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		prefix := "application/json"
+		w.Header().Set("Content-Type", prefix)
+
+		log.Println("decoding request")
+
+		var jsonReq []model.BatchRequest
+		json.NewDecoder(req.Body).Decode(&jsonReq)
+        if len(jsonReq) == 0 {
+            w.WriteHeader(http.StatusBadRequest) 
+            return
+        }
+
+		var jsonResp []model.BatchResponse
+		for _, item := range jsonReq {
+            shortURL, _ := s.CreateShortURL(item.OriginalURL)
+
+			fullURL := baseURL + "/" + shortURL
+            jsonResp = append(jsonResp, model.BatchResponse{
+                CorrelationID: item.CorrelationID,
+                ShortURL: fullURL,
+            })
+        }
+
+        w.WriteHeader(http.StatusCreated)
+		enc := json.NewEncoder(w)
+		if err := enc.Encode(jsonResp); err != nil {
 			log.Println("error encoding response")
 			return
 		}

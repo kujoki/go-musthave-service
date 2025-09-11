@@ -1,19 +1,21 @@
 package main
 
 import (
-	"net/http"
-	"fmt"
 	"context"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/config"
-	"github.com/kujoki/go-musthave-service/internal/db"
 	"github.com/kujoki/go-musthave-service/internal/handler"
 	l "github.com/kujoki/go-musthave-service/internal/logger"
 	"github.com/kujoki/go-musthave-service/internal/model"
 	"github.com/kujoki/go-musthave-service/internal/service"
+	"github.com/kujoki/go-musthave-service/internal/storage"
+	"github.com/kujoki/go-musthave-service/migrations"
 	"go.uber.org/zap"
 )
 
@@ -35,14 +37,34 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
     defer logger.Sync()
 	sugar = *logger.Sugar()
 
-	data, err := cache.Load(cfg.FileStoragePath)
-	if err != nil {
-		sugar.Infow(err.Error(), "event", "read URL map")
-		data = []model.Data{}
-	}
-	sugar.Infow("Read storage", "filename", cfg.FileStoragePath)
+	var repo storage.URLRepository
+	var data []model.Data
 
-	s := service.NewService(data)
+	if cfg.DatabaseDSN != "" {
+		migrations.RunMigrations(cfg.DatabaseDSN)
+		postgresRepo, err := storage.NewPostgresRepository(cfg.DatabaseDSN)
+		if err != nil {
+			sugar.Fatalf("failed to connect to postgres: %v", err)
+		}
+		repo = postgresRepo
+	} else {
+		memoryRepo := storage.NewMemoryRepository()
+		repo = memoryRepo
+		if cfg.FileStoragePath != "" {
+			loaded, err := storage.Load(cfg.FileStoragePath)
+			if err != nil {
+				sugar.Infow(err.Error(), "event", "read URL map")
+				memoryRepo.Data = make(map[string]string)
+			} else {
+				memoryRepo.Data = model.DataSliceToMap(loaded)
+			}
+			sugar.Infow("read storage", "filename", cfg.FileStoragePath)
+		} else {
+			memoryRepo.Data = make(map[string]string)
+		}
+	}
+	
+	s := service.NewService(repo, cfg.ShortURLLen)
 
 	r := chi.NewRouter()
 
@@ -52,11 +74,15 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 
 	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s)
 	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s)
+	postBatchAPIHandler := handler.WrapperPostBatchAPI(cfg.BaseURL, s)
 	getHandler := handler.WrapperGetSlashURL(s)
+	getPingHandler := handler.WrapperPingAPI(repo)
 
 	r.Post("/",  l.WithLogging(sugar, postHandler))
 	r.Post("/api/shorten", l.WithLogging(sugar, postAPIShortHandler))
+	r.Post("/api/shorten/batch", l.WithLogging(sugar, postBatchAPIHandler))
 	r.Get("/{ID}", l.WithLogging(sugar, getHandler))
+	r.Get("/ping", getPingHandler)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
@@ -71,7 +97,7 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	defer cancel()
 
 	go func() {
-		sugar.Infow("Running server", "address", cfg.RunAddr)
+		sugar.Infow("running server", "address", cfg.RunAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			sugar.Fatalw(err.Error(), "event", "start server")
 		}
@@ -84,13 +110,18 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	cancel()
 	<-ctx.Done()
 
-	sugar.Infow("Save data before shutting down")
-
-	data = s.AllData()
-	if err := cache.Save(cfg.FileStoragePath, data); err != nil {
-		sugar.Errorw(err.Error(), "event", "save URL map")
+	sugar.Infow("save data before shutting down")
+	
+	if cfg.FileStoragePath != "" {
+		data = model.MapToDataSlice(repo.GetAll())
+		if err := storage.Save(cfg.FileStoragePath, data); err != nil {
+			sugar.Errorw(err.Error(), "event", "save URL map")
+		}
 	}
 
-    sugar.Infow("Shutting down server gracefully")
+	repo.Close()
+	sugar.Infow("close repository")
+
+    sugar.Infow("shutting down server gracefully")
 	return srv.Shutdown(context.Background())
 }

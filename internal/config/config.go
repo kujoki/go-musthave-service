@@ -9,6 +9,8 @@ type Config struct {
 	RunAddr string `env:"SERVER_ADDRESS"`
 	BaseURL string `env:"BASE_URL"`
 	FileStoragePath  string `env:"FILE_STORAGE_PATH"`
+	DatabaseDSN string `env:"DATABASE_DSN"`
+	ShortURLLen int `env:"SHORT_URL_LEN"`
 }
 
 func ParseFlags() *Config {
@@ -16,13 +18,16 @@ func ParseFlags() *Config {
 
 	cfg.RunAddr = "localhost:8080"
 	cfg.BaseURL = "http://localhost:8080"
-	cfg.FileStoragePath = "./output.json"
+	cfg.FileStoragePath = "" //"./output.json"
+	cfg.DatabaseDSN = "" //"user=postgres password=zmxncbv dbname=repository sslmode=disable host=localhost port=5432"
+	cfg.ShortURLLen = 7
 
 	_ = env.Parse(&cfg)
 
 	flag.StringVar(&cfg.RunAddr, "a", cfg.RunAddr, "HTTP server listen address")
 	flag.StringVar(&cfg.BaseURL, "b", cfg.BaseURL, "Base URL used for short links")
 	flag.StringVar(&cfg.FileStoragePath, "f", cfg.FileStoragePath, "File for output data")
+	flag.StringVar(&cfg.DatabaseDSN, "d", cfg.DatabaseDSN, "DB for output data")
 	flag.Parse()  
 	return &cfg
 }

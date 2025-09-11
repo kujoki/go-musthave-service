@@ -1,20 +1,22 @@
 package handler_test
 
 import (
-	"testing"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/go-chi/chi/v5"
-	"net/http"
-	"net/http/httptest"
-	"github.com/kujoki/go-musthave-service/internal/handler"
-	"github.com/kujoki/go-musthave-service/internal/service"
-	"github.com/kujoki/go-musthave-service/internal/model"
+	"bytes"
 	"encoding/json"
 	"io"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"strings"
-	"bytes"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/kujoki/go-musthave-service/internal/handler"
+	"github.com/kujoki/go-musthave-service/internal/model"
+	"github.com/kujoki/go-musthave-service/internal/service"
+	"github.com/kujoki/go-musthave-service/internal/storage"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPostHandler(t *testing.T) {
@@ -43,8 +45,18 @@ func TestPostHandler(t *testing.T) {
 				contentType: "text/plain",
 			},
 		},
+		{
+			name: "POST; status code 409", // was used
+			url: "https://practicum.yandex.ru/",
+			want: want{
+				code: 409,
+				contentType: "text/plain",
+			},
+		},
 	}
-	s := service.NewService([]model.Data{})
+	repo := storage.NewMemoryRepository()
+	s := service.NewService(repo, 5)
+	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body := strings.NewReader(test.url)
@@ -104,8 +116,9 @@ func TestGetHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService([]model.Data{})
-	s.URLMap["OfsO5"] = "https://practicum.yandex.ru/"
+	repo := storage.NewMemoryRepository()
+	s := service.NewService(repo, 5)
+	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 
 	r := chi.NewRouter()
 	r.Get("/{ID}", handler.WrapperGetSlashURL(s))
@@ -147,6 +160,14 @@ func TestPostAPIShortHandler(t *testing.T) {
 				code: 201,
 				contentType: "application/json",
 			},
+		},
+		{
+			name: "POST; status code 409",
+			url: "https://practicum.yandex.ru/", // was used
+			want: want{
+				code: 409,
+				contentType: "application/json",
+			},
 		}, 
 		{
 			name: "POST; status code 400", // Bad Request
@@ -157,7 +178,9 @@ func TestPostAPIShortHandler(t *testing.T) {
 			},
 		},
 	}
-	s := service.NewService([]model.Data{})
+	repo := storage.NewMemoryRepository()
+	s := service.NewService(repo, 5)
+	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			jsonBody, err := json.Marshal(map[string]string{
@@ -171,6 +194,71 @@ func TestPostAPIShortHandler(t *testing.T) {
 			w := httptest.NewRecorder()
 			postSlashHandler := handler.WrapperPostAPIShort("http://localhost:8080", s)
             postSlashHandler(w, request)
+
+            res := w.Result()
+			defer res.Body.Close()
+
+			assert.Equal(t, test.want.code, res.StatusCode)
+			assert.Equal(t, test.want.contentType, res.Header.Get("Content-Type"))
+
+			resBody, err := io.ReadAll(res.Body)
+			assert.NoError(t, err)
+
+			log.Println("Response body:", string(resBody))
+
+			if test.want.code == http.StatusCreated {
+				assert.NotEmpty(t, strings.TrimSpace(string(resBody)), "Expected not empty for 201")
+			}
+		},
+		)
+	}
+}
+
+func TesPostBatchAPI(t *testing.T) {
+	type want struct {
+		code int
+		contentType string
+		respData []model.BatchResponse
+	}
+	tests := []struct {
+		name string
+		reqData []model.BatchRequest
+		want want
+	}{
+		{
+			name: "POST; status code 201",
+			reqData: []model.BatchRequest{
+				{
+					CorrelationID: "uuid",
+					OriginalURL: "https://practicum.yandex.ru/",
+			},
+			},
+			want: want{
+				code: 201,
+				contentType: "application/json",
+				respData: []model.BatchResponse{
+					{
+						CorrelationID: "uuid",
+						ShortURL: "http://localhost:8080/OfsO5",
+				},
+			},
+		},
+		},
+	}
+	repo := storage.NewMemoryRepository()
+	s := service.NewService(repo, 5)
+	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			jsonBody, err := json.Marshal(test.reqData)
+			require.NoError(t, err)
+
+			request := httptest.NewRequest(http.MethodPost, "/api/shorten/batch", bytes.NewReader(jsonBody))
+			request.Header.Set("Content-Type", "application/json")
+
+			w := httptest.NewRecorder()
+			postBatchHandler := handler.WrapperPostBatchAPI("http://localhost:8080", s)
+            postBatchHandler(w, request)
 
             res := w.Result()
 			defer res.Body.Close()
