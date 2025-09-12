@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 	"github.com/jackc/pgx"
-	//"github.com/kujoki/go-musthave-service/internal/model"
+	"github.com/kujoki/go-musthave-service/internal/model"
 )
 
 type PostgresRepository struct {
@@ -63,14 +63,14 @@ func (r *PostgresRepository) GetShortURL(longURL string) (string, bool, error) {
     return shortURL, true, nil
 }
 
-func (r *PostgresRepository) SaveURL(shortURL string, longURL string) error {
+func (r *PostgresRepository) SaveURL(shortURL string, longURL string, userUUID string) error {
     now := time.Now().UTC()
     _, err := r.Pool.Exec(`
-        INSERT INTO url_data (short_url, long_url, created_at, updated_at)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO url_data (short_url, long_url, username, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (short_url) DO UPDATE
         SET long_url = EXCLUDED.long_url, updated_at = EXCLUDED.updated_at
-    `, shortURL, longURL, now, now)
+    `, shortURL, longURL, userUUID, now, now)
     return err
 }
 
@@ -108,4 +108,27 @@ func (r *PostgresRepository) Close() {
 
 func (r *PostgresRepository) Ping(ctx context.Context) bool {
 	return true
+}
+
+func (r *PostgresRepository) GetUserURLs(userUUID string) ([]model.UserURL, error) {
+	var userURLs []model.UserURL
+    rows, err := r.Pool.Query("SELECT short_url, long_url FROM url_data WHERE username=$1", userUUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var u model.UserURL
+		if err := rows.Scan(&u.ShortURL, &u.OriginalURL); err != nil {
+			return nil, err
+		}
+		userURLs = append(userURLs, u)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+    return userURLs, nil
 }

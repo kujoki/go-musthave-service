@@ -1,0 +1,4 @@
+DELETE FROM url_data;
+
+ALTER TABLE IF EXISTS url_data
+ADD COLUMN username VARCHAR(255) NOT NULL;

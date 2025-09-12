@@ -1,0 +1,2 @@
+ALTER TABLE IF EXISTS url_data
+DROP COLUMN IF EXISTS username;

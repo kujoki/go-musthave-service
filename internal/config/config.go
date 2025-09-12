@@ -11,6 +11,9 @@ type Config struct {
 	FileStoragePath  string `env:"FILE_STORAGE_PATH"`
 	DatabaseDSN string `env:"DATABASE_DSN"`
 	ShortURLLen int `env:"SHORT_URL_LEN"`
+	SecretToken string `env:"SECRET_KEY"`
+	UserCookieName string `env:"USER_COOKIE_NAME"`
+	ApplicationName string `env:"APP_NAME"`
 }
 
 func ParseFlags() *Config {
@@ -21,6 +24,9 @@ func ParseFlags() *Config {
 	cfg.FileStoragePath = "" //"./output.json"
 	cfg.DatabaseDSN = "" //"user=postgres password=zmxncbv dbname=repository sslmode=disable host=localhost port=5432"
 	cfg.ShortURLLen = 7
+	cfg.UserCookieName = "auth_user"
+	cfg.ApplicationName = "go_musthave_service"
+	cfg.SecretToken = "secret"
 
 	_ = env.Parse(&cfg)
 
