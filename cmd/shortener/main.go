@@ -54,13 +54,13 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 			loaded, err := storage.Load(cfg.FileStoragePath)
 			if err != nil {
 				sugar.Infow(err.Error(), "event", "read URL map")
-				memoryRepo.Data = make(map[string]string)
+				memoryRepo.Data = make(map[string]model.URLRecord)
 			} else {
 				memoryRepo.Data = model.DataSliceToMap(loaded)
 			}
 			sugar.Infow("read storage", "filename", cfg.FileStoragePath)
 		} else {
-			memoryRepo.Data = make(map[string]string)
+			memoryRepo.Data = make(map[string]model.URLRecord)
 		}
 	}
 	
@@ -80,6 +80,7 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	getHandler := handler.WrapperGetSlashURL(s, builder)
 	getPingHandler := handler.WrapperPingAPI(repo, builder)
 	getUsersURL := handler.WrapperGetUsers(cfg.BaseURL, s, builder)
+	deleteUsersURL := handler.WrapperDeleteURLs(s, builder)
 
 	r.Post("/",  l.WithLogging(sugar, postHandler))
 	r.Post("/api/shorten", l.WithLogging(sugar, postAPIShortHandler))
@@ -87,6 +88,7 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	r.Get("/{ID}", l.WithLogging(sugar, getHandler))
 	r.Get("/ping", getPingHandler)
 	r.Get("/api/user/urls", getUsersURL)
+	r.Delete("/api/user/urls", l.WithLogging(sugar, deleteUsersURL))
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
@@ -110,7 +112,8 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	<-sigChan 
+	<-sigChan
+	s.Stop()
 	cancel()
 	<-ctx.Done()
 

@@ -129,7 +129,11 @@ func TestPostHandler(t *testing.T) {
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
 	builder := handler.NewJWTBuild("secret", "must-test-service", "auth_user")
-	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
+		repo.Data["OfsO5"] = model.URLRecord{
+		LongURL: "https://practicum.yandex.ru/",
+		IsDeleted: false,
+		UserUUID: "Kate",
+	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body := strings.NewReader(test.url)
@@ -196,7 +200,11 @@ func TestGetHandler(t *testing.T) {
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
 	builder := handler.NewJWTBuild("secret", "must-test-service", "auth_user")
-	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
+	repo.Data["OfsO5"] = model.URLRecord{
+		LongURL: "https://practicum.yandex.ru/",
+		IsDeleted: false,
+		UserUUID: "Kate",
+	}
 
 	r := chi.NewRouter()
 	r.Get("/{ID}", handler.WrapperGetSlashURL(s, builder))
@@ -259,7 +267,11 @@ func TestPostAPIShortHandler(t *testing.T) {
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
 	builder := handler.NewJWTBuild("secret", "must-test-service", "auth_user")
-	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
+	repo.Data["OfsO5"] = model.URLRecord{
+		LongURL: "https://practicum.yandex.ru/",
+		IsDeleted: false,
+		UserUUID: "Kate",
+	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			jsonBody, err := json.Marshal(map[string]string{
@@ -327,7 +339,11 @@ func TesPostBatchAPI(t *testing.T) {
 	repo := storage.NewMemoryRepository()
 	s := service.NewService(repo, 5)
 	builder := handler.NewJWTBuild("secret", "must-test-service", "auth_user")
-	repo.Data["OfsO5"] = "https://practicum.yandex.ru/"
+	repo.Data["OfsO5"] = model.URLRecord{
+		LongURL: "https://practicum.yandex.ru/",
+		IsDeleted: false,
+		UserUUID: "Kate",
+	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			jsonBody, err := json.Marshal(test.reqData)
@@ -356,5 +372,72 @@ func TesPostBatchAPI(t *testing.T) {
 			}
 		},
 		)
+	}
+}
+
+func TestDeleteHandler(t *testing.T) {
+	type want struct {
+		code int
+		contentType string
+	}
+	type cookie struct {
+		isSet bool
+		hasUserUUID bool
+	}
+	tests := []struct {
+		name string
+		shortURLs []string
+		userCookie cookie
+		want want
+	}{
+		{
+			name: "DELETE; status code 202",
+			shortURLs: []string{"6qxTVvsy", "RTfd56hn", "Jlfd67ds"},
+			userCookie: cookie{
+				isSet: true,
+				hasUserUUID: true,
+			},
+			want: want{
+				code: 202,
+				contentType: "application/json",
+			},
+		}, 
+	}
+	repo := storage.NewMemoryRepository()
+	s := service.NewService(repo, 5)
+	builder := handler.NewJWTBuild("secret", "must-test-service", "auth_user")
+		repo.Data["OfsO5"] = model.URLRecord{
+		LongURL: "https://practicum.yandex.ru/",
+		IsDeleted: false,
+		UserUUID: "Kate",
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := json.Marshal(test.shortURLs)
+			assert.NoError(t, err)
+
+			request := httptest.NewRequest(http.MethodDelete, "/api/user/urls", bytes.NewReader(body))
+			
+			if test.userCookie.isSet {
+				setCookieTest(test.userCookie.hasUserUUID, builder, request)
+			}
+
+			request.Header.Set("Content-Type", "text/plain")
+
+			w := httptest.NewRecorder()
+			postSlashHandler := handler.WrapperDeleteURLs(s, builder)
+            postSlashHandler(w, request)
+
+            res := w.Result()
+			defer res.Body.Close()
+
+			assert.Equal(t, test.want.code, res.StatusCode)
+			assert.Equal(t, test.want.contentType, res.Header.Get("Content-Type"))
+
+			resBody, err := io.ReadAll(res.Body)
+			assert.NoError(t, err)
+
+			log.Println("Response body:", string(resBody))
+		})
 	}
 }

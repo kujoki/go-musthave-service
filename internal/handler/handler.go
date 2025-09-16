@@ -73,13 +73,15 @@ func GetOrCreateUserUUID(b JWTBuilder, w http.ResponseWriter, req *http.Request)
 }
 
 func CheckExistURL(s *service.Service, originURL string) (string, error) {
-	shortURL, ok, err := s.CheckShortURLValue(originURL)
+	shortURLRes, ok, err := s.CheckShortURLValue(originURL)
 	if err != nil {
 		log.Println("there is an error during checking URL existing")
 		return "", err
 	}
 	if ok {
-		return shortURL, model.ErrURLExists
+		if !shortURLRes.IsDeleted {
+			return shortURLRes.ShortURL, model.ErrURLExists
+		}
 	}
 	return "", nil
 }
@@ -163,17 +165,22 @@ func WrapperGetSlashURL(s *service.Service, b *JWTBuilder) http.HandlerFunc {
 
 		log.Printf("the short url is %s \n", shortURL)
 
-		originURL, ok, _ := s.CheckOriginURLValue(shortURL)
+		originURLRes, ok, _ := s.CheckOriginURLValue(shortURL)
 		log.Printf("the result of check was received: %t \n", ok)
 
-		if !ok || originURL == "" {
+		if !ok || originURLRes.OriginURL == "" {
 			log.Printf("value for this url doesn't exist in map")
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(`value for this url doesn't exist in map!`))
 			return
 		}
+		if ok && originURLRes.IsDeleted {
+			log.Println("the long URL was deleted")
+			w.WriteHeader(http.StatusGone)
+			return
+		}
 
-		w.Header().Set("Location", originURL)
+		w.Header().Set("Location", originURLRes.OriginURL)
 		w.WriteHeader(http.StatusTemporaryRedirect)
 		log.Println("processing GET request was completed")
 		}
@@ -345,5 +352,38 @@ func WrapperGetUsers(baseURL string, s *service.Service, b *JWTBuilder) http.Han
         if err := json.NewEncoder(w).Encode(data); err != nil {
             log.Println("error encoding response:", err)
         }
+	}
+}
+
+func WrapperDeleteURLs(s *service.Service, b *JWTBuilder) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		prefix := "application/json"
+		w.Header().Set("Content-Type", prefix)
+
+		userUUID, err := GetOrCreateUserUUID(*b, w, req)
+		log.Println("got userUUID", userUUID)
+		if err != nil {
+			log.Println("there is an authorization error")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte("there is an authorization error"))
+			return
+		}
+		var URLs []string
+		if err := json.NewDecoder(req.Body).Decode(&URLs); err != nil {
+			log.Println("failed to parse JSON for delete:", err)
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		for _, URL := range URLs {
+			log.Println("create task from URL ", URL)
+			item := &model.Task{
+				UserUUID: userUUID,
+				Item: URL,
+			}
+    		s.ChTask <- *item
+		}
+		
+		w.WriteHeader(http.StatusAccepted)
 	}
 }

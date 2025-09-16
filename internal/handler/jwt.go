@@ -14,8 +14,8 @@ type Claims struct {
 }
 
 type JWTBuilder struct {
-    secretKey string
-	issuer string
+    secretKey 	   string
+	issuer 		   string
 	UserCookieName string
 }
 
@@ -31,13 +31,11 @@ var ErrNoUserUUID = errors.New("there is no user UUID")
 var ErrInvalidToken = errors.New("there is unvalid token")
 var ErrUnexpectedAlg = errors.New("unexpected signing method")
 
-
 func (b *JWTBuilder) GenerateUserUUID() string {
 	userUUID := make([]byte, 16)
-    _, err := rand.Read(userUUID)
-    if err != nil {
-        log.Printf("error while uuid generating: %v\n", err)
-    }
+	if _, err := rand.Read(userUUID); err != nil {
+		log.Printf("error while uuid generating: %v\n", err)
+	}
 	return hex.EncodeToString(userUUID)
 }
 

@@ -7,6 +7,21 @@ import (
 
 var ErrURLExists = errors.New("URL already exists")
 
+type Task struct {
+    UserUUID string
+    Item string
+}
+
+type ShortURLResult struct {
+    ShortURL string
+    IsDeleted bool
+}
+
+type LongURLResult struct {
+    OriginURL string
+    IsDeleted bool
+}
+
 type Request struct {
 	URL string `json:"url"`
 }
@@ -26,9 +41,11 @@ type BatchResponse struct {
 }
 
 type Data struct {
-    UUID string    `json:"uuid"`
-    ShortURL string `json:"short_url"`
-	OriginalURL string `json:"original_url"`
+    UUID        string `json:"uuid"`
+    ShortURL    string `json:"short_url"`
+    OriginalURL string `json:"original_url"`
+    UserUUID    string `json:"user_uuid"`
+    IsDeleted   bool   `json:"is_deleted"`
 }
 
 type UserURL struct {
@@ -36,24 +53,36 @@ type UserURL struct {
     OriginalURL string `json:"original_url"`
 }
 
-func MapToDataSlice(dataMap map[string]string) []Data {
+type URLRecord struct {
+    LongURL  string
+    UserUUID string
+    IsDeleted bool
+}
+
+func DataSliceToMap(dataSlice []Data) map[string]URLRecord {
+    dataMap := make(map[string]URLRecord, len(dataSlice))
+    for _, d := range dataSlice {
+        dataMap[d.ShortURL] = URLRecord{
+            LongURL:   d.OriginalURL,
+            UserUUID: d.UserUUID, 
+            IsDeleted: d.IsDeleted,
+        }
+    }
+    return dataMap
+}
+
+func MapToDataSlice(dataMap map[string]URLRecord) []Data {
     dataSlice := make([]Data, 0, len(dataMap))
     i := 1
-    for short, orig := range dataMap {
+    for short, rec := range dataMap {
         dataSlice = append(dataSlice, Data{
             UUID:        strconv.Itoa(i),
             ShortURL:    short,
-            OriginalURL: orig,
+            OriginalURL: rec.LongURL,
+            UserUUID:    rec.UserUUID,
+            IsDeleted:   rec.IsDeleted,
         })
         i++
     }
     return dataSlice
-}
-
-func DataSliceToMap(dataSlice []Data) map[string]string {
-    dataMap := make(map[string]string)
-    for _, data := range dataSlice {
-        dataMap[data.ShortURL] = data.OriginalURL
-    }
-    return dataMap
 }
