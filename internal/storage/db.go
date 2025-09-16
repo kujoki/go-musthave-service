@@ -7,8 +7,6 @@ import (
 	"time"
 	"github.com/jackc/pgx"
 	"github.com/kujoki/go-musthave-service/internal/model"
-	"strings"
-	"fmt"
 )
 
 type PostgresRepository struct {
@@ -131,27 +129,21 @@ func (r *PostgresRepository) DeleteURL(ctx context.Context, tasks []model.Task) 
     }
 	log.Println("start to delete short URLs")
 
-    var pairs []string
-    var args []interface{}
-
+	URLs := []string{}
     for _, task := range tasks {
-        args = append(args, task.UserUUID, task.Item)
-        pairs = append(pairs, fmt.Sprintf("($%d, $%d)", len(args)-1, len(args)))
+        URLs = append(URLs, task.Item)
     }
 
-    query := fmt.Sprintf(`
+    query := `
         UPDATE url_data
         SET is_deleted = true
-        WHERE (username, short_url) IN (%s)`,
-        strings.Join(pairs, ", "))
-
-    _, err := r.Pool.Exec(query, args...)
-	log.Println("delete process was done")
-	if err != nil {
-		log.Println("there is an error during delete process ", err)
-	}
-	log.Println("result after deleting", r.GetAll())
-	return err
+        WHERE short_url = ANY($1)
+    `
+    _, err := r.Pool.Exec(query, URLs)
+    if err != nil {
+        log.Println("failed to delete urls: ", err)
+    }
+	return nil
 	} 
 
 func (r *PostgresRepository) GetUserURLs(userUUID string) ([]model.UserURL, error) {

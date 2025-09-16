@@ -88,10 +88,6 @@ func (r *MemoryRepository) DeleteURL(ctx context.Context, tasks []model.Task) er
             log.Println("there is no such item ", task.Item)
             continue
         }
-        if rec.UserUUID != task.UserUUID {
-            log.Println("cant delete rec cause user in not owner ", task.Item)
-            continue 
-        }
 
         rec.IsDeleted = true
         r.Data[task.Item] = rec
