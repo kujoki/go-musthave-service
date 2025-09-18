@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
+	"time"
 	"os/signal"
 	"syscall"
 
@@ -64,25 +64,25 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 		}
 	}
 	
-	s := service.NewService(repo, cfg.ShortURLLen)
+	s := service.NewService(repo, cfg.ShortURLLen, sugar)
+	builder := handler.NewJWTBuild(cfg.SecretToken, cfg.ApplicationName, cfg.UserCookieName, sugar)
 
 	r := chi.NewRouter()
 
-	
 	r.Use(handler.GzipMiddlewareRequest)
 	r.Use(handler.GzipMiddlewareResponse)
+	r.Use(handler.AuthMiddleware(builder))
+	 
 
-	builder := handler.NewJWTBuild(cfg.SecretToken, cfg.ApplicationName, cfg.UserCookieName)
+	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s)
+	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s)
+	postBatchAPIHandler := handler.WrapperPostBatchAPI(cfg.BaseURL, s)
+	getHandler := handler.WrapperGetSlashURL(s)
+	getPingHandler := handler.WrapperPingAPI(repo)
+	getUsersURL := handler.WrapperGetUsers(cfg.BaseURL, s)
+	deleteUsersURL := handler.WrapperDeleteURLs(s)
 
-	postHandler := handler.WrapperPostSlash(cfg.BaseURL, s, builder)
-	postAPIShortHandler := handler.WrapperPostAPIShort(cfg.BaseURL, s, builder)
-	postBatchAPIHandler := handler.WrapperPostBatchAPI(cfg.BaseURL, s, builder)
-	getHandler := handler.WrapperGetSlashURL(s, builder)
-	getPingHandler := handler.WrapperPingAPI(repo, builder)
-	getUsersURL := handler.WrapperGetUsers(cfg.BaseURL, s, builder)
-	deleteUsersURL := handler.WrapperDeleteURLs(s, builder)
-
-	r.Post("/",  l.WithLogging(sugar, postHandler))
+	r.Post("/", l.WithLogging(sugar, postHandler))
 	r.Post("/api/shorten", l.WithLogging(sugar, postAPIShortHandler))
 	r.Post("/api/shorten/batch", l.WithLogging(sugar, postBatchAPIHandler))
 	r.Get("/{ID}", l.WithLogging(sugar, getHandler))
@@ -96,11 +96,12 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	})
 
 	srv := &http.Server{
-        Addr:    cfg.RunAddr,
-        Handler: r,
-    }
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+		Addr:    cfg.RunAddr,
+		Handler: r,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	go func() {
 		sugar.Infow("running server", "address", cfg.RunAddr)
@@ -109,13 +110,11 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 		}
 	}()
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	<-sigChan
-	s.Stop()
-	cancel()
 	<-ctx.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 
 	sugar.Infow("save data before shutting down")
 	
@@ -130,5 +129,5 @@ func run(cfg *config.Config, sugar zap.SugaredLogger) error {
 	sugar.Infow("close repository")
 
     sugar.Infow("shutting down server gracefully")
-	return srv.Shutdown(context.Background())
+	return srv.Shutdown(shutdownCtx)
 }

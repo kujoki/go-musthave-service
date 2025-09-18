@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
-	"log"
 	"math/rand"
 	"sync"
 	"time"
 	"github.com/kujoki/go-musthave-service/internal/model"
 	"github.com/kujoki/go-musthave-service/internal/storage"
+	"go.uber.org/zap"
 )
 
 const symbols = "zxcvbnmasdfghjklqwertyuiopZXCVBNMASDFGHJKLQWERTYUIOP1234567890"
@@ -19,9 +19,10 @@ type Service struct {
 	mu     sync.Mutex
 	ctx    context.Context
 	cancel context.CancelFunc
+	suLog  zap.SugaredLogger
 }
 
-func NewService(repo storage.URLRepository, lenURL int) *Service {
+func NewService(repo storage.URLRepository, lenURL int, sugar zap.SugaredLogger) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
     s := &Service{
         Repo:   repo,
@@ -29,6 +30,7 @@ func NewService(repo storage.URLRepository, lenURL int) *Service {
         ChTask: make(chan model.Task, 1024),
         ctx:    ctx,
         cancel: cancel,
+		suLog: sugar,
     }
 
     go s.DeleteURLs(ctx)
@@ -69,7 +71,7 @@ func (s *Service) CreateShortURL(originURL string, userUUID string) (string, err
 			if err := s.Repo.SaveURL(shortURL, originURL, userUUID); err != nil {
 				return "", err
 			}
-			log.Printf("url %s has been saved -> %s\n", shortURL, originURL)
+			s.suLog.Infow("url", shortURL, "has been saved", "->", originURL)
 			return shortURL, nil
 		}
 	}
@@ -85,7 +87,7 @@ func (s *Service) GetURLByUser(userUUID string) ([]model.UserURL, error) {
 }
 
 func (s *Service) Stop() {
-	log.Println("stop service")
+	s.suLog.Infow("stop service")
     s.cancel()
 }
 
@@ -101,7 +103,7 @@ func (s *Service) DeleteURLs(ctx context.Context) {
             return
         }
         if err := s.Repo.DeleteURL(ctx, messages); err != nil {
-            log.Println("cannot delete messages:", err)
+            s.suLog.Warnw("cannot delete messages:", err)
             return
         }
         messages = messages[:0] 
@@ -110,7 +112,7 @@ func (s *Service) DeleteURLs(ctx context.Context) {
     for {
         select {
         case <-ctx.Done():
-			log.Println("context is done, so flush")
+			s.suLog.Infow("context is done, so flush")
             flush()
             return
 
@@ -118,7 +120,7 @@ func (s *Service) DeleteURLs(ctx context.Context) {
             messages = append(messages, msg)
 
             if len(messages) >= 50 {
-				log.Println("too many messages, so flush")
+				s.suLog.Infow("too many messages, so flush")
                 flush()
             }
 

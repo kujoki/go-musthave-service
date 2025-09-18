@@ -15,63 +15,6 @@ import (
 	"github.com/kujoki/go-musthave-service/internal/storage"
 )
 
-func GetOrCreateUserUUID(b JWTBuilder, w http.ResponseWriter, req *http.Request) (string, error) {
-	var userUUID string
-	var err error
-	authHeader := req.Header.Get("Authorization")
-
-	if strings.HasPrefix(authHeader, "Bearer ") {
-			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-			userUUID, _ = b.ParseUserUUID(tokenString)
-		}
-	if userUUID != "" {
-		return userUUID, nil
-	}
-
-    cookie, err := req.Cookie(b.UserCookieName)
-    if err != nil {
-        log.Println("no cookie/ auth header, generating new one")
-        userUUID := b.GenerateUserUUID()
-        token, err := b.SignUserUUID(userUUID)
-        if err != nil {
-			log.Println("error during sign uuid")
-            return "", err
-        }
-        http.SetCookie(w, &http. Cookie{
-            Name:     b.UserCookieName,
-            Value:    token,
-            Path:     "/",
-            HttpOnly: true,
-            Secure:   true, 
-        })
-		log.Println("set cookie")
-		w.Header().Set("Authorization", "Bearer "+token)
-		log.Println("set authorization header")
-        return userUUID, nil
-    }
-    userUUID, err = b.ParseUserUUID(cookie.Value)
-    if err != nil {
-        log.Println("cookie parsing failed, issuing new one")
-        newUUID := b.GenerateUserUUID()
-        token, err := b.SignUserUUID(newUUID)
-        if err != nil {
-			log.Println("error during sign uuid")
-            return "", err
-        }
-        http.SetCookie(w, &http.Cookie{
-            Name:     b.UserCookieName,
-            Value:    token,
-            Path:     "/",
-            HttpOnly: true,
-            Secure:   true,
-        })
-        return "", ErrNoUserUUID
-    }
-
-    log.Println("valid cookie with user UUID")
-    return userUUID, nil
-}
-
 func CheckExistURL(s *service.Service, originURL string) (string, error) {
 	shortURLRes, ok, err := s.CheckShortURLValue(originURL)
 	if err != nil {
@@ -86,19 +29,12 @@ func CheckExistURL(s *service.Service, originURL string) (string, error) {
 	return "", nil
 }
 
-func WrapperPostSlash(baseURL string, s *service.Service, b *JWTBuilder) http.HandlerFunc {
+func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 	log.Printf("base url is %s \n", baseURL)
 	return func(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	
-	userUUID, err := GetOrCreateUserUUID(*b, w, req)
-	log.Println("userUUID was got")
-	if err != nil {
-		log.Println("there is an authorization error")
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("there is an authorization error"))
-		return
-	}
+	userUUID := req.Context().Value(userUUIDKey).(string)
 
 	reqData, err := io.ReadAll(req.Body)
 	if err != nil || len(reqData) == 0 {
@@ -142,18 +78,9 @@ func WrapperPostSlash(baseURL string, s *service.Service, b *JWTBuilder) http.Ha
 	}
 }
 
-func WrapperGetSlashURL(s *service.Service, b *JWTBuilder) http.HandlerFunc {
+func WrapperGetSlashURL(s *service.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-
-		_, err := GetOrCreateUserUUID(*b, w, req)
-		log.Println("userUUID was got")
-		if err != nil {
-			log.Println("there is an authorization error")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("there is an authorization error"))
-			return
-		}
 		
 		shortURL := chi.URLParam(req, "ID")
 		if len(shortURL) == 0 {
@@ -186,19 +113,12 @@ func WrapperGetSlashURL(s *service.Service, b *JWTBuilder) http.HandlerFunc {
 		}
 	}
 
-func WrapperPostAPIShort(baseURL string, s *service.Service, b *JWTBuilder) http.HandlerFunc {
+func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		prefix := "application/json"
 		w.Header().Set("Content-Type", prefix)
 
-		userUUID, err := GetOrCreateUserUUID(*b, w, req)
-		log.Println("userUUID was got")
-		if err != nil {
-			log.Println("there is an authorization error")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("there is an authorization error"))
-			return
-		}
+		userUUID := req.Context().Value(userUUIDKey).(string)
 
 		log.Println("decoding request")
 
@@ -258,15 +178,8 @@ func WrapperPostAPIShort(baseURL string, s *service.Service, b *JWTBuilder) http
 	}
 }
 
-func WrapperPingAPI(repo storage.URLRepository, b *JWTBuilder) http.HandlerFunc {
+func WrapperPingAPI(repo storage.URLRepository) http.HandlerFunc {
     return func(w http.ResponseWriter, req *http.Request) {
-		_, err := GetOrCreateUserUUID(*b, w, req)
-		if err != nil {
-			log.Println("there is an authorization error")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("there is an authorization error"))
-			return
-		}
         ctx := req.Context()
         res := repo.Ping(ctx)
 		if !res {
@@ -277,18 +190,13 @@ func WrapperPingAPI(repo storage.URLRepository, b *JWTBuilder) http.HandlerFunc 
     }
 }
 
-func WrapperPostBatchAPI(baseURL string, s *service.Service, b *JWTBuilder) http.HandlerFunc {
+func WrapperPostBatchAPI(baseURL string, s *service.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		prefix := "application/json"
 		w.Header().Set("Content-Type", prefix)
-		userUUID, err := GetOrCreateUserUUID(*b, w, req)
-		log.Println("userUUID was got")
-		if err != nil {
-			log.Println("there is an authorization error")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("there is an authorization error"))
-			return
-		}
+
+		userUUID := req.Context().Value(userUUIDKey).(string)
+
 		log.Println("decoding request")
 
 		var jsonReq []model.BatchRequest
@@ -319,21 +227,14 @@ func WrapperPostBatchAPI(baseURL string, s *service.Service, b *JWTBuilder) http
 	}
 }
 
-func WrapperGetUsers(baseURL string, s *service.Service, b *JWTBuilder) http.HandlerFunc {
+func WrapperGetUsers(baseURL string, s *service.Service) http.HandlerFunc {
     return func(w http.ResponseWriter, req *http.Request) {
 		prefix := "application/json"
 		w.Header().Set("Content-Type", prefix)
 
-		userUUID, err := GetOrCreateUserUUID(*b, w, req)
-		log.Println("got userUUID", userUUID)
-		if err != nil {
-			log.Println("there is an authorization error")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("there is an authorization error"))
-			return
-		}
-		var data []model.UserURL
-		data, err = s.GetURLByUser(userUUID)
+		userUUID := req.Context().Value(userUUIDKey).(string)
+
+		data, err := s.GetURLByUser(userUUID)
 		if err != nil {
 			log.Println("can't get user's URLs during error ", err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -355,19 +256,13 @@ func WrapperGetUsers(baseURL string, s *service.Service, b *JWTBuilder) http.Han
 	}
 }
 
-func WrapperDeleteURLs(s *service.Service, b *JWTBuilder) http.HandlerFunc {
+func WrapperDeleteURLs(s *service.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		prefix := "application/json"
 		w.Header().Set("Content-Type", prefix)
 
-		userUUID, err := GetOrCreateUserUUID(*b, w, req)
-		log.Println("got userUUID", userUUID)
-		if err != nil {
-			log.Println("there is an authorization error")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte("there is an authorization error"))
-			return
-		}
+		userUUID := req.Context().Value(userUUIDKey).(string)
+
 		var URLs []string
 		if err := json.NewDecoder(req.Body).Decode(&URLs); err != nil {
 			log.Println("failed to parse JSON for delete:", err)
