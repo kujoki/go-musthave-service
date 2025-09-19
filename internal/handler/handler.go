@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/kujoki/go-musthave-service/internal/model"
 	"github.com/kujoki/go-musthave-service/internal/service"
@@ -15,13 +16,15 @@ import (
 )
 
 func CheckExistURL(s *service.Service, originURL string) (string, error) {
-	shortURL, ok, err := s.CheckShortURLValue(originURL)
+	shortURLRes, ok, err := s.CheckShortURLValue(originURL)
 	if err != nil {
 		log.Println("there is an error during checking URL existing")
 		return "", err
 	}
 	if ok {
-		return shortURL, model.ErrURLExists
+		if !shortURLRes.IsDeleted {
+			return shortURLRes.ShortURL, model.ErrURLExists
+		}
 	}
 	return "", nil
 }
@@ -30,6 +33,8 @@ func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 	log.Printf("base url is %s \n", baseURL)
 	return func(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
+	
+	userUUID := req.Context().Value(userUUIDKey).(string)
 
 	reqData, err := io.ReadAll(req.Body)
 	if err != nil || len(reqData) == 0 {
@@ -60,7 +65,7 @@ func WrapperPostSlash(baseURL string, s *service.Service) http.HandlerFunc {
 			return
 	}
 
-	shortURL, err = s.CreateShortURL(originURL)
+	shortURL, err = s.CreateShortURL(originURL, userUUID)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 	}
@@ -87,17 +92,22 @@ func WrapperGetSlashURL(s *service.Service) http.HandlerFunc {
 
 		log.Printf("the short url is %s \n", shortURL)
 
-		originURL, ok, _ := s.CheckOriginURLValue(shortURL)
+		originURLRes, ok, _ := s.CheckOriginURLValue(shortURL)
 		log.Printf("the result of check was received: %t \n", ok)
 
-		if !ok || originURL == "" {
+		if !ok || originURLRes.OriginURL == "" {
 			log.Printf("value for this url doesn't exist in map")
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(`value for this url doesn't exist in map!`))
 			return
 		}
+		if ok && originURLRes.IsDeleted {
+			log.Println("the long URL was deleted")
+			w.WriteHeader(http.StatusGone)
+			return
+		}
 
-		w.Header().Set("Location", originURL)
+		w.Header().Set("Location", originURLRes.OriginURL)
 		w.WriteHeader(http.StatusTemporaryRedirect)
 		log.Println("processing GET request was completed")
 		}
@@ -107,6 +117,8 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		prefix := "application/json"
 		w.Header().Set("Content-Type", prefix)
+
+		userUUID := req.Context().Value(userUUIDKey).(string)
 
 		log.Println("decoding request")
 
@@ -144,7 +156,7 @@ func WrapperPostAPIShort(baseURL string, s *service.Service) http.HandlerFunc {
 			return
 		}
 		
-		shortURL, err = s.CreateShortURL(jsonReq.URL)
+		shortURL, err = s.CreateShortURL(jsonReq.URL, userUUID)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -183,6 +195,8 @@ func WrapperPostBatchAPI(baseURL string, s *service.Service) http.HandlerFunc {
 		prefix := "application/json"
 		w.Header().Set("Content-Type", prefix)
 
+		userUUID := req.Context().Value(userUUIDKey).(string)
+
 		log.Println("decoding request")
 
 		var jsonReq []model.BatchRequest
@@ -194,9 +208,9 @@ func WrapperPostBatchAPI(baseURL string, s *service.Service) http.HandlerFunc {
 
 		var jsonResp []model.BatchResponse
 		for _, item := range jsonReq {
-            shortURL, _ := s.CreateShortURL(item.OriginalURL)
+            shortURL, _ := s.CreateShortURL(item.OriginalURL, userUUID)
 
-			fullURL := baseURL + "/" + shortURL
+			fullURL, _ := url.JoinPath(baseURL, shortURL)
             jsonResp = append(jsonResp, model.BatchResponse{
                 CorrelationID: item.CorrelationID,
                 ShortURL: fullURL,
@@ -210,5 +224,61 @@ func WrapperPostBatchAPI(baseURL string, s *service.Service) http.HandlerFunc {
 			return
 		}
 		log.Println("sending HTTP 201 response")
+	}
+}
+
+func WrapperGetUsers(baseURL string, s *service.Service) http.HandlerFunc {
+    return func(w http.ResponseWriter, req *http.Request) {
+		prefix := "application/json"
+		w.Header().Set("Content-Type", prefix)
+
+		userUUID := req.Context().Value(userUUIDKey).(string)
+
+		data, err := s.GetURLByUser(userUUID)
+		if err != nil {
+			log.Println("can't get user's URLs during error ", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return 
+		}
+        if len(data) == 0 {
+            log.Println("no URLs for user")
+            w.WriteHeader(http.StatusNoContent)
+            return
+        }
+		for i := range data {
+    		data[i].ShortURL, _ = url.JoinPath(baseURL, data[i].ShortURL)
+		}
+
+        w.WriteHeader(http.StatusOK)
+        if err := json.NewEncoder(w).Encode(data); err != nil {
+            log.Println("error encoding response:", err)
+        }
+	}
+}
+
+func WrapperDeleteURLs(s *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		prefix := "application/json"
+		w.Header().Set("Content-Type", prefix)
+
+		userUUID := req.Context().Value(userUUIDKey).(string)
+
+		var URLs []string
+		if err := json.NewDecoder(req.Body).Decode(&URLs); err != nil {
+			log.Println("failed to parse JSON for delete:", err)
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		for _, URL := range URLs {
+			log.Println("create task from URL ", URL)
+			item := &model.Task{
+				UserUUID: userUUID,
+				Item: URL,
+			}
+    		s.ChTask <- *item
+		}
+		
+		w.WriteHeader(http.StatusAccepted)
 	}
 }

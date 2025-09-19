@@ -1,83 +1,131 @@
 package service
 
 import (
-	"log"
+	"context"
 	"math/rand"
 	"sync"
+	"time"
 	"github.com/kujoki/go-musthave-service/internal/model"
 	"github.com/kujoki/go-musthave-service/internal/storage"
+	"go.uber.org/zap"
 )
 
 const symbols = "zxcvbnmasdfghjklqwertyuiopZXCVBNMASDFGHJKLQWERTYUIOP1234567890"
 
 type Service struct {
-    Repo   storage.URLRepository
-    lenURL int
-    mu     sync.Mutex
+	Repo   storage.URLRepository
+	lenURL int
+    ChTask chan model.Task
+	mu     sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+	suLog  zap.SugaredLogger
 }
 
-func NewService(repo storage.URLRepository, lenURL int) *Service {
-    return &Service{
+func NewService(repo storage.URLRepository, lenURL int, sugar zap.SugaredLogger) *Service {
+	ctx, cancel := context.WithCancel(context.Background())
+    s := &Service{
         Repo:   repo,
         lenURL: lenURL,
+        ChTask: make(chan model.Task, 1024),
+        ctx:    ctx,
+        cancel: cancel,
+		suLog: sugar,
     }
-}
 
-func CreateURLMap(data []model.Data) (map[string]string, int) {
-	URLMap := make(map[string]string)
-	lenURL := 5
-	for _, item := range data {
-        URLMap[item.ShortURL] = item.OriginalURL
-		lenURL = len(item.ShortURL)
-    }
-    return URLMap, lenURL
+    go s.DeleteURLs(ctx)
+    return s
 }
-
 
 func generateRandomString(length int) string {
-    b := make([]byte, length)
-    for i := range b {
-        b[i] = symbols[rand.Intn(len(symbols))]
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = symbols[rand.Intn(len(symbols))]
+	}
+	return string(b)
+}
+
+func (s *Service) CheckOriginURLValue(shortURL string) (model.LongURLResult, bool, error) {
+	longURLRes, ok, err := s.Repo.GetLongURL(shortURL)
+	return longURLRes, ok, err
+}
+
+func (s *Service) CheckShortURLValue(longURL string) (model.ShortURLResult, bool, error) {
+	ShortURLResult, ok, err := s.Repo.GetShortURL(longURL)
+	return ShortURLResult, ok, err
+}
+
+func (s *Service) CreateShortURL(originURL string, userUUID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if shortRes, found, _ := s.Repo.GetShortURL(originURL); found && !shortRes.IsDeleted  {
+		return shortRes.ShortURL, nil
+	}
+
+	var shortURL string
+	for {
+		shortURL = generateRandomString(s.lenURL)
+
+		if _, found, _ := s.Repo.GetLongURL(shortURL); !found {
+			if err := s.Repo.SaveURL(shortURL, originURL, userUUID); err != nil {
+				return "", err
+			}
+			s.suLog.Infow("url", shortURL, "has been saved", "->", originURL)
+			return shortURL, nil
+		}
+	}
+}
+
+func (s *Service) AllData() map[string]model.URLRecord {
+	return s.Repo.GetAll()
+}
+
+func (s *Service) GetURLByUser(userUUID string) ([]model.UserURL, error) {
+    userURLs, err := s.Repo.GetUserURLs(userUUID)
+	return userURLs, err
+}
+
+func (s *Service) Stop() {
+	s.suLog.Infow("stop service")
+    s.cancel()
+}
+
+func (s *Service) DeleteURLs(ctx context.Context) { 
+
+    ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+    var messages []model.Task
+
+	flush := func() {
+        if len(messages) == 0 {
+            return
+        }
+        if err := s.Repo.DeleteURL(ctx, messages); err != nil {
+            s.suLog.Warnw("cannot delete messages:", err)
+            return
+        }
+        messages = messages[:0] 
     }
-    return string(b)
-}
 
-
-func (s *Service) CheckOriginURLValue(shortURL string) (string, bool, error) {
-    longURL, ok, err := s.Repo.GetLongURL(shortURL)
-    return longURL, ok, err
-}
-
-
-func (s *Service) CheckShortURLValue(longURL string) (string, bool, error) {
-    shortURL, ok, err := s.Repo.GetShortURL(longURL)
-    return shortURL, ok, err
-}
-
-
-func (s *Service) CreateShortURL(originURL string) (string, error) {
-    s.mu.Lock()
-    defer s.mu.Unlock()
-
-    if short, found, _ := s.Repo.GetShortURL(originURL); found {
-        return short, nil
-    }
-
-    var shortURL string
     for {
-        shortURL = generateRandomString(s.lenURL)
+        select {
+        case <-ctx.Done():
+			s.suLog.Infow("context is done, so flush")
+            flush()
+            return
 
-        if _, found, _ := s.Repo.GetLongURL(shortURL); !found {
-            if err := s.Repo.SaveURL(shortURL, originURL); err != nil {
-                return "", err
+        case msg := <-s.ChTask:
+            messages = append(messages, msg)
+
+            if len(messages) >= 50 {
+				s.suLog.Infow("too many messages, so flush")
+                flush()
             }
-            log.Printf("url %s has been saved -> %s\n", shortURL, originURL)
-            return shortURL, nil
+
+        case <-ticker.C:
+            flush()
         }
     }
-}
-
-
-func (s *Service) AllData() map[string]string {
-    return s.Repo.GetAll()
 }
